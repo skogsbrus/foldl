@@ -67,6 +67,19 @@ pub fn infos(
     (infos, watched)
 }
 
+/// Trust keyed on content: the same `.foldl/` was allowed in a repository
+/// sharing a root commit with this one.
+fn reused(root: &Path, folder: &foldl_core::folder::Folder, trust: &Store) -> bool {
+    let allowed_in = trust.content_roots(&folder.hash);
+    let here = match (folder.reuse, allowed_in.is_empty()) {
+        (foldl_core::manifest::Reuse::Repo, false) => {
+            crate::git::root_commits(root).unwrap_or_default()
+        }
+        _ => vec![],
+    };
+    here.iter().any(|commit| allowed_in.contains(commit))
+}
+
 fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderStatus, Vec<PathBuf>) {
     let entry = trust.get(root);
     let marked = entry.as_ref().map(|e| e.state);
@@ -92,6 +105,7 @@ fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderSta
     match (allowed_hash, prefixed) {
         (Some(hash), _) if hash == folder.hash => {}
         (_, true) => {}
+        _ if reused(root, &folder, trust) => {}
         (hash, false) => {
             return (
                 FolderStatus::Untrusted {

@@ -69,6 +69,14 @@ fn text_files(files: &FolderFiles) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// Content allowed with `reuse = "repo"`, keyed on its hash.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ContentEntry {
+    version: u32,
+    hash: Hash,
+    roots: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store {
     pub dir: PathBuf,
@@ -89,6 +97,33 @@ impl Store {
     pub fn set(&self, entry: &TrustEntry) -> io::Result<()> {
         let json = serde_json::to_vec_pretty(entry).map_err(io::Error::other)?;
         fsx::write_atomic(&self.path_of(&entry.path), &json)
+    }
+
+    fn content_path(&self, hash: &Hash) -> PathBuf {
+        self.dir.join("content").join(format!("{}.json", hash.0))
+    }
+
+    /// Root commits of repositories where this content was allowed.
+    pub fn content_roots(&self, hash: &Hash) -> Vec<String> {
+        let bytes = fs::read(self.content_path(hash)).unwrap_or_default();
+        serde_json::from_slice::<ContentEntry>(&bytes)
+            .map(|e| e.roots)
+            .unwrap_or_default()
+    }
+
+    /// Records that content was allowed in a repository with these roots.
+    pub fn allow_content(&self, hash: &Hash, roots: &[String]) -> io::Result<()> {
+        let mut all = self.content_roots(hash);
+        all.extend(roots.iter().cloned());
+        all.sort();
+        all.dedup();
+        let entry = ContentEntry {
+            version: STATE_VERSION,
+            hash: hash.clone(),
+            roots: all,
+        };
+        let json = serde_json::to_vec_pretty(&entry).map_err(io::Error::other)?;
+        fsx::write_atomic(&self.content_path(hash), &json)
     }
 
     /// Changes whenever any entry is written, for the prompt's fast path.

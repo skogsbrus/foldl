@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use foldl_core::error::{Code, Failure};
 use foldl_core::folder::{Folder, FolderFiles, Host, Issue, load};
 use foldl_core::machine::tilde;
+use foldl_core::manifest::Reuse;
 
 use crate::cli::IoContext;
 use crate::disk;
@@ -64,6 +65,13 @@ pub fn allow(sys: &Sys, dir: Option<PathBuf>) -> Result<i32, Failure> {
     let store = store(sys);
     let previous = store.get(&root).map(|e| e.files).unwrap_or_default();
     print!("{}", changes(&previous, &files));
+    let roots = match folder.reuse {
+        Reuse::Repo => crate::git::root_commits(&root).unwrap_or_default(),
+        Reuse::None => vec![],
+    };
+    store
+        .allow_content(&folder.hash, &roots)
+        .ctx("writing trust")?;
     store
         .set(&TrustEntry::allowed(&files, folder.hash))
         .ctx("writing trust")?;
