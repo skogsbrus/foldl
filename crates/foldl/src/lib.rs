@@ -14,6 +14,7 @@ pub mod oneshot;
 pub mod runner;
 pub mod session;
 pub mod settings;
+pub mod status;
 pub mod sys;
 pub mod trust;
 pub mod trust_cmd;

@@ -65,6 +65,19 @@ pub enum Command {
     Ignore { dir: Option<PathBuf> },
     /// Validate the folder's manifests.
     Check { dir: Option<PathBuf> },
+    /// Migrations, their state and sessions.
+    Status {
+        /// Also list every session.
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        json: bool,
+        /// Print this session's event log.
+        #[arg(long)]
+        events: bool,
+    },
+    /// Full output of a migration's last run in this session.
+    Logs { name: String },
     /// Load the folder, run a command in it, unload.
     Exec {
         /// Folder to run in (default: the current one).
@@ -103,7 +116,9 @@ pub fn run(args: Vec<OsString>, sys: Sys) -> i32 {
     };
     let json = matches!(
         cli.command,
-        Command::Exec { json: true, .. } | Command::Export { json: true, .. }
+        Command::Exec { json: true, .. }
+            | Command::Export { json: true, .. }
+            | Command::Status { json: true, .. }
     );
     match dispatch(cli, &sys) {
         Ok(code) => code,
@@ -135,6 +150,8 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
         Command::Ignore { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Ignored),
         Command::Check { dir } => trust_cmd::check(sys, dir),
+        Command::Status { all, json, events } => crate::status::status(sys, all, json, events),
+        Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
         Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
         Command::DumpEnv { file } => {
