@@ -708,10 +708,26 @@ fn shared_down(
     exclusive: bool,
 ) -> (Machine, Vec<Effect>) {
     let entry = lease.state.entries.get(&loaded.name).cloned();
-    let clean = entry.filter(|e| e.dirty.is_none());
-    match (exclusive, clean) {
+    let forced = m
+        .forced
+        .contains(&(loaded.root.clone(), loaded.name.clone()));
+    let runnable = entry.filter(|e| forced || e.dirty.is_none());
+    let home = m.env.get("HOME").map(Value::lossy).unwrap_or_default();
+    let who: Vec<String> = lease.holders.iter().map(|h| h.describe(&home)).collect();
+    let warning = (forced && !exclusive && runnable.is_some()).then(|| {
+        Effect::Print(format!(
+            "foldl ! {}: restarting while in use by {}\n",
+            loaded.name,
+            who.join(", ")
+        ))
+    });
+    match (exclusive || forced, runnable) {
         (true, Some(entry)) => match down_run(&loaded.name, &entry, &m.env) {
-            Some(run) => wait(m, Wait::Down(loaded, Down::Ran(lease)), vec![run]),
+            Some(run) => wait(
+                m,
+                Wait::Down(loaded, Down::Ran(lease)),
+                warning.into_iter().chain([run]).collect(),
+            ),
             None => {
                 let mut lease = lease;
                 lease.state.entries.remove(&loaded.name);
@@ -720,8 +736,6 @@ fn shared_down(
             }
         },
         (false, _) => {
-            let home = m.env.get("HOME").map(Value::lossy).unwrap_or_default();
-            let who: Vec<String> = lease.holders.iter().map(|h| h.describe(&home)).collect();
             let detail = match who.is_empty() {
                 true => "kept: in use".to_string(),
                 false => format!("kept: in use by {}", who.join(", ")),

@@ -128,7 +128,9 @@ pub fn plan(session: &Session, folders: &[FolderInfo]) -> Plan {
         .loaded
         .iter()
         .zip(&wants)
-        .take_while(|(l, w)| w.keeps(l))
+        .take_while(|(l, w)| {
+            w.keeps(l) && !session.redo.contains(&(l.root.clone(), l.name.clone()))
+        })
         .count();
     let shared_changed = session.loaded[..prefix]
         .iter()

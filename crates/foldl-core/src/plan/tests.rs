@@ -260,3 +260,14 @@ fn notices_are_shown_once_per_fingerprint() {
     assert!(plan(&s, &[untrusted("f")]).notices.is_empty());
     assert_eq!(plan(&s, &[untrusted("g")]).notices.len(), 1);
 }
+
+#[test]
+fn redo_reloads_a_migration_and_what_follows() {
+    let mut s = loaded(&[allowed("/a", "fa", A)]);
+    s.redo.insert(("/a".into(), "a1".into()));
+    let p = plan(&s, &[allowed("/a", "fa", A)]);
+    assert_eq!(
+        (p.downs, names(&p.ups)),
+        (2, vec!["a1".to_string(), "a2".to_string()])
+    );
+}

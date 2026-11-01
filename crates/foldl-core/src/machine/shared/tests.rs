@@ -832,3 +832,59 @@ fn lease_errors_while_leaving_still_apply_the_derived_down() {
     assert_eq!(finish(&failed).code, Code::Internal);
     assert!(finish(&failed).session.loaded.is_empty());
 }
+
+#[test]
+fn redo_restarts_a_shared_migration_even_in_use() {
+    let mut k = Kernel::new();
+    let runs = enter(&mut k, vec![session(0), session(1)], &ctx());
+    let f = finish(&runs[0]);
+    let mut s = f.session.clone();
+    s.redo.insert(("/app".into(), "pg".into()));
+    let redone = drive_one(&mut k, start(s, ctx(), f.env.clone(), &folder()), |_| None);
+    assert_eq!(
+        k.log,
+        ["up:pg", "up:cache", "down:pg", "free-ports", "up:pg"],
+        "{}",
+        redone.printed
+    );
+    assert!(
+        redone
+            .printed
+            .contains("foldl ! pg: restarting while in use by zsh"),
+        "{}",
+        redone.printed
+    );
+    assert!(finish(&redone).session.redo.is_empty());
+}
+
+#[test]
+fn a_forced_down_retries_a_dirty_one() {
+    let mut k = dirty_kernel();
+    let mut s = session(5);
+    let entry = k.state.entries["cache"].clone();
+    s.loaded.push(crate::state::Loaded {
+        root: entry.root.clone(),
+        name: "cache".into(),
+        hash: entry.hash.clone(),
+        watch: Default::default(),
+        scope: crate::manifest::Scope::Shared,
+        lease: Some(crate::lease::lease_ref(
+            &crate::folder::LeaseSpec::Folder,
+            std::path::Path::new("/app"),
+            None,
+        )),
+        diff: Default::default(),
+        aliases: vec![],
+        interactive: None,
+        down: None,
+        down_timeout_ms: 1,
+        saved: entry.saved.clone(),
+        state_dir: entry.state_dir.clone(),
+        log: entry.log.clone(),
+        note: None,
+    });
+    s.redo.insert(("/app".into(), "cache".into()));
+    drive_one(&mut k, start(s, ctx(), env(&[]), &[]), |_| None);
+    assert_eq!(k.log, ["down:cache"]);
+    assert!(k.state.entries.is_empty());
+}

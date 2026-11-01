@@ -85,6 +85,10 @@ pub struct Session {
     /// Migrations unloaded by hand with `foldl down`.
     #[serde(default)]
     pub held_down: BTreeSet<(PathBuf, String)>,
+    /// Migrations to reload at the next transition (`foldl redo`); a
+    /// shared one restarts even while others hold its lease.
+    #[serde(default)]
+    pub redo: BTreeSet<(PathBuf, String)>,
     /// PID of the session holder, if one runs.
     #[serde(default)]
     pub holder: Option<u32>,

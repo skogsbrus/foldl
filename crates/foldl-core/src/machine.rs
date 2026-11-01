@@ -223,6 +223,8 @@ pub struct Machine {
     shell_code: String,
     code: Code,
     fingerprints: BTreeMap<PathBuf, String>,
+    /// Shared migrations whose down runs even if others hold the lease.
+    forced: std::collections::BTreeSet<(PathBuf, String)>,
 }
 
 /// Plans the transition from what the session has loaded to what
@@ -239,6 +241,7 @@ pub fn start(
         notices,
     } = plan(&session, folders);
     let mut session = session;
+    let forced = std::mem::take(&mut session.redo);
     let fingerprints: BTreeMap<PathBuf, String> = folders
         .iter()
         .map(|f| (f.root.clone(), f.fingerprint.clone()))
@@ -275,6 +278,7 @@ pub fn start(
         shell_code: String::new(),
         code,
         fingerprints,
+        forced,
     };
     then(printed.collect(), advance(machine))
 }
