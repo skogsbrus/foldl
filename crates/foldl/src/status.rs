@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 use crate::cli::IoContext;
 use crate::sys::Sys;
-use crate::{gather, session, settings, trust_cmd};
+use crate::{gather, leases, session, settings, trust_cmd};
 
 /// Every session on disk.
 pub fn sessions(paths: &Paths) -> Vec<Session> {
@@ -44,15 +44,22 @@ fn folders(sys: &Sys) -> Vec<FolderInfo> {
 
 /// One folder as JSON: trust, how many sessions have it loaded, and each
 /// migration's state in this session.
-fn folder_json(info: &FolderInfo, mine: Option<&Session>, all: &[Session]) -> Value {
+fn folder_json(info: &FolderInfo, mine: Option<&Session>, all: &[Session], paths: &Paths) -> Value {
     let loaded_in = |s: &Session| s.loaded.iter().any(|l| l.root == info.root);
     let (trust, migrations) = match &info.status {
-        FolderStatus::Allowed { folder, .. } => (
+        FolderStatus::Allowed { folder, leases, .. } => (
             "allowed",
             folder
                 .migrations
                 .iter()
-                .map(|m| (m.dir.clone(), m.name.clone(), m.scope.name()))
+                .map(|m| {
+                    (
+                        m.dir.clone(),
+                        m.name.clone(),
+                        m.scope.name(),
+                        leases.get(&m.name).cloned(),
+                    )
+                })
                 .collect(),
         ),
         FolderStatus::Untrusted { .. } => ("not allowed", vec![]),
@@ -62,11 +69,18 @@ fn folder_json(info: &FolderInfo, mine: Option<&Session>, all: &[Session]) -> Va
     };
     let migrations: Vec<Value> = migrations
         .into_iter()
-        .map(|(dir, name, scope)| {
+        .map(|(dir, name, scope, lease)| {
             let loaded = mine.and_then(|s| s.loaded.iter().find(|l| l.root == info.root && l.name == name));
-            let state = loaded.map_or("down", |_| "up");
+            let up = loaded.map_or("down", |_| "up");
             let number = dir.split('-').next().unwrap_or_default().to_string();
-            json!({"number": number, "name": name, "scope": scope, "state": state, "note": loaded.and_then(|l| l.note.clone())})
+            let entry = lease.as_ref().and_then(|l| leases::read_state(paths, l).entries.remove(&name));
+            let dirty = entry.and_then(|e| e.dirty);
+            let holders: Vec<String> = lease.iter().flat_map(|l| leases::holders(paths, l)).map(|h| format!("{} {}", h.name, h.pid)).collect();
+            let (state, note) = match dirty {
+                Some(d) => ("DIRTY", Some(format!("down failed {} → foldl down --force {name}", d.at))),
+                None => (up, loaded.and_then(|l| l.note.clone())),
+            };
+            json!({"number": number, "name": name, "scope": scope, "state": state, "note": note, "holders": holders})
         })
         .collect();
     let private =
@@ -104,6 +118,16 @@ fn folder_text(folder: &Value, home: &str) -> String {
                 .as_str()
                 .map(|n| format!("  {n}"))
                 .unwrap_or_default();
+            let holders: Vec<&str> = m["holders"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let holders = match holders.is_empty() {
+                true => String::new(),
+                false => format!("  holders: {}", holders.join(", ")),
+            };
             let (number, name, scope, state) = (
                 m["number"].as_str(),
                 m["name"].as_str(),
@@ -111,7 +135,7 @@ fn folder_text(folder: &Value, home: &str) -> String {
                 m["state"].as_str(),
             );
             format!(
-                "  {} {:width$}  {:7} {}{note}\n",
+                "  {} {:width$}  {:7} {}{holders}{note}\n",
                 number.unwrap_or_default(),
                 name.unwrap_or_default(),
                 scope.unwrap_or_default(),
@@ -164,7 +188,7 @@ pub fn status(sys: &Sys, all: bool, json: bool, events: bool) -> Result<i32, Fai
     let everyone = sessions(&paths);
     let folders: Vec<Value> = folders(sys)
         .iter()
-        .map(|f| folder_json(f, mine.as_ref(), &everyone))
+        .map(|f| folder_json(f, mine.as_ref(), &everyone, &paths))
         .collect();
     let listed: Vec<Value> = everyone.iter().filter(|_| all).map(session_json).collect();
     let home = sys.var("HOME").unwrap_or_default();
@@ -186,9 +210,15 @@ pub fn logs(sys: &Sys, name: &str) -> Result<i32, Failure> {
     let paths = sys.paths();
     let id = sys.var("FOLDL_SESSION").unwrap_or_default();
     let roots: Vec<PathBuf> = crate::disk::ancestors(&sys.cwd).into_iter().rev().collect();
+    let leased = crate::manual::resolve(sys, name)
+        .ok()
+        .and_then(|(root, lease)| Some((root, lease?)));
+    let lease_log =
+        leased.map(|(root, lease)| Paths::migration_dirs(&paths.lease(&lease.id), &root, name).2);
     let found = roots
         .iter()
         .map(|root| Paths::migration_dirs(&paths.session(&id), root, name).2)
+        .chain(lease_log)
         .find_map(|log| std::fs::read(log).ok());
     let bytes = found
         .ok_or_else(|| Failure::new(Code::Usage, format!("no log for {name} in this session")))?;

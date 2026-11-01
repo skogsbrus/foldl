@@ -100,3 +100,27 @@ fn down_force_retries_a_dirty_down() {
         "found svc past an untrusted folder"
     );
 }
+
+#[test]
+fn status_and_logs_show_shared_migrations() {
+    let f = Fixture::new();
+    f.folder(".", FILES);
+    std::fs::write(f.home.join("broken"), "").unwrap();
+    let foldl = common::foldl().display().to_string();
+    let out = f.shell(&shells()[0], &format!("cd project; _foldl_hook; '{foldl}' status; cd /; _foldl_hook; cd ~/project; '{foldl}' status; '{foldl}' logs svc"));
+    f.settle();
+    assert!(
+        out.stdout.contains("  1 svc  shared  up  holders: bash "),
+        "{out:?}"
+    );
+    assert!(
+        out.stdout.contains("  1 svc  shared  DIRTY  down failed "),
+        "{out:?}"
+    );
+    assert!(out.stdout.contains("→ foldl down --force svc"), "{out:?}");
+    let logged = f.run(&["logs", "svc"]);
+    assert_eq!(
+        logged.code, 0,
+        "the lease's log, without a session: {logged:?}"
+    );
+}

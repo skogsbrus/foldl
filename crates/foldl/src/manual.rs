@@ -32,7 +32,7 @@ pub enum Action {
 
 /// The folder (innermost first) that has a migration called `name`, and
 /// its lease if it is shared.
-fn resolve(sys: &Sys, name: &str) -> Result<(PathBuf, Option<LeaseRef>), Failure> {
+pub fn resolve(sys: &Sys, name: &str) -> Result<(PathBuf, Option<LeaseRef>), Failure> {
     let trust = trust_cmd::store(sys);
     let scan = gather::scan(&sys.cwd, &trust, &Default::default());
     let host = Host {
