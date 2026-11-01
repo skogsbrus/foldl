@@ -968,6 +968,27 @@ corrected here.
   directory mtime. Any `allow`/`deny` makes every session re-plan once.
 - **2026-11-01 · Rollback output.** Decision: migrations unloaded by a
   rollback leave the `↑` line and show as `foldl ↩ rolled back a · b`.
+- **2026-11-01 · Where `foldl new` writes, and the first-run choice.**
+  Q: unspecified details. Decision: `new` uses the nearest folder with a
+  `.foldl/`, else the git top level, else the working directory; numbers
+  are zero-padded to three digits (or the widest existing prefix). The
+  shared-or-private question is asked on a terminal; `--private` and
+  `--committed` answer it up front, and without a terminal the default is
+  committed. Private adds `/.foldl/` to the common git dir's `info/exclude`.
+  Why: agents run without a terminal and the committed setup is the one
+  the rest of the design favours.
+- **2026-11-01 · Ignoring `.local` migrations.** Q: "`foldl new --local`
+  adds the ignore entry": where? Decision: `/.foldl/*.local/` in the
+  repository's `.gitignore` when `.foldl/` is committed; nothing when it is
+  private (already excluded). Why: `.gitignore` is shared, so teammates'
+  local migrations are ignored too; `.foldl/` itself may not hold a
+  `.gitignore` file, since anything but migrations and `foldl.toml` is an
+  error there.
+- **2026-11-01 · Content trust index.** Decision: `allow` of a folder with
+  `reuse = "repo"` records `trust/content/<hash>.json` with the
+  repository's root commits; another folder with the same `.foldl/` hash is
+  trusted if its repository shares one of them. `deny`/`ignore` on a path
+  still win.
 
 ## Prior art
 
