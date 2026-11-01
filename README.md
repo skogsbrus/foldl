@@ -11,3 +11,8 @@ A hook for executing arbitrary code when entering or exiting a folder.
 - Cross-platform support (Linux, macOS)
 - Extensible and customizable
 - Natively compatible with Nix developer shells
+- Functional: a pure core folded over events, with all I/O at the edges
+
+## License
+
+[MIT](LICENSE)
