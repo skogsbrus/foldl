@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Commits staged changes only if `nix flake check` passes. The message is
+# read from stdin.
+set -euo pipefail
+git add -A
+git diff --cached --shortstat
+if ! nix flake check 2>/tmp/foldl-check.log; then
+  grep -E "error|FAILED|panicked|Uncovered|: [0-9]" /tmp/foldl-check.log | tail -30
+  echo "flake check failed; not committing" >&2
+  exit 1
+fi
+git commit -q -F - "$@"
+git log --oneline -1

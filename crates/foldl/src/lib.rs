@@ -4,5 +4,6 @@
 //! foldl's imperative shell: the CLI and the interpreter that performs the
 //! core's effects. All I/O lives in this crate.
 
+pub mod disk;
 pub mod fsx;
 pub mod sys;
