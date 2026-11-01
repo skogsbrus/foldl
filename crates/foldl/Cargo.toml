@@ -22,6 +22,8 @@ clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 sha2 = "0.10"
 similar = "2"
+rustix = { version = "1", features = ["process", "event", "fs", "pipe"] }
+signal-hook = "0.3"
 
 [dev-dependencies]
 proptest = "1"
