@@ -920,6 +920,54 @@ corrected here.
   `timeout`, `nix_timeout`, `down_timeout`, `on_dirty`,
   `trusted_prefixes` (`~/` expanded) and `port_range` (`[low, high]`,
   default `[20000, 29999]`). Unknown keys are errors, as in manifests.
+- **2026-11-01 · `hook-step` arguments.** Q: how does `hook-step` know
+  which shell it serves? Decision: the hook passes `--pid $$`. A session
+  whose recorded parent differs is inherited. Why: `getppid` is the shell
+  only when the shell execs the command substitution directly, which
+  neither bash nor zsh promises.
+- **2026-11-01 · Ctrl-C and the hook.** Q: verified in real terminals,
+  bash and zsh both discard `$(...)` output on SIGINT, so a rollback would
+  never reach the shell. Decision: the hook ignores SIGINT in the shell
+  while `hook-step` runs; foldl still receives it and rolls back. zsh uses
+  `localtraps`, so a user's INT trap survives; bash resets INT to its
+  default afterwards, which drops a user's own INT trap (documented
+  limitation; restoring it would cost a fork per prompt).
+- **2026-11-01 · How scripts run.** Q: details the spec leaves open.
+  Decision: a script runs as `<shell> -c <driver>` in its own process group
+  (so a timeout kills everything it started; Ctrl-C is forwarded), with
+  stdin from `/dev/null` and stdout and stderr in its log. Ups report their
+  environment through an EXIT trap that runs `foldl __dump-env`, so an
+  `exit` inside the script still reports. Variables the shell manages
+  (`_`, `SHLVL`, `PWD`, `OLDPWD`, `PS1`, `PS2`, `SHELLOPTS`, `BASHOPTS`,
+  `COLUMNS`, `LINES`, `BASH_FUNC_*`) and foldl's own are not tracked. A
+  script can't prompt on the terminal; its output is in `foldl logs`.
+- **2026-11-01 · Inherited sessions.** Q: "discards the inherited state and
+  loads from scratch", but the child's env still holds the parent's
+  changes. Decision: the new session first reverts the parent's cumulative
+  diff on its env, for each variable still holding the parent's value,
+  then loads. Why: otherwise `path_add` doubles and a child that leaves the
+  folder keeps the parent's variables.
+- **2026-11-01 · Ending sessions without a holder.** Q: a shell that exits
+  with nothing to tear down has no holder to remove its session directory.
+  Decision: creating a session sweeps directories whose parent and holder
+  are both dead.
+- **2026-11-01 · `exec` and `export` sessions.** Q: which session do they
+  load into? Decision: they never change an interactive shell's session,
+  whose env would stop matching its state. `exec` joins a session that
+  already has the target's stack loaded; otherwise it loads into an
+  ephemeral session, reverting the inherited one's changes first, and
+  unloads after the command. `export` reuses an agent session (no shell,
+  from `foldl session start`); otherwise it loads, prints and unloads, so
+  services an `up` starts are stopped again. A missing command is exit 69.
+- **2026-11-01 · `allow` doesn't prompt.** Q: "shows what changed ...
+  before allowing": confirm? Decision: `allow` prints the diff and allows;
+  typing `foldl allow` is the confirmation. It also validates first and
+  refuses invalid folders (exit 78).
+- **2026-11-01 · Prompt fast path token.** Decision: the token hashes each
+  ancestor `.foldl/`'s metadata, its watched files and the trust store's
+  directory mtime. Any `allow`/`deny` makes every session re-plan once.
+- **2026-11-01 · Rollback output.** Decision: migrations unloaded by a
+  rollback leave the `↑` line and show as `foldl ↩ rolled back a · b`.
 
 ## Prior art
 
