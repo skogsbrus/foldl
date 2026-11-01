@@ -11,6 +11,7 @@ pub mod gather;
 pub mod git;
 pub mod hook;
 pub mod interp;
+pub mod new_cmd;
 pub mod oneshot;
 pub mod runner;
 pub mod session;

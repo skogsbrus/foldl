@@ -67,7 +67,9 @@
             pkgs.zsh
             pkgs.git
             pkgs.coreutils
-          ];
+          ]
+          # script(1) for terminal tests; macOS uses its own /usr/bin/script.
+          ++ lib.optional pkgs.stdenv.isLinux pkgs.util-linux;
           testEnv = {
             FOLDL_TEST_BASH3 = "${bash3}/bin/bash3";
             FOLDL_TEST_BASH5 = "${pkgs.bashInteractive}/bin/bash";

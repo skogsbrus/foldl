@@ -91,7 +91,15 @@ impl Fixture {
     /// A `foldl` command with a clean environment, run in the project.
     pub fn cmd(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(foldl());
-        cmd.args(args).current_dir(&self.project).env_clear();
+        cmd.args(args);
+        self.prepare(cmd)
+    }
+
+    /// Gives any command the fixture's clean environment and directory.
+    pub fn prepare(&self, mut cmd: Command) -> Command {
+        cmd.current_dir(&self.project).env_clear();
+        cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1");
         cmd.env("HOME", &self.home)
             .env("PATH", std::env::var_os("PATH").unwrap_or_default());
         for var in [

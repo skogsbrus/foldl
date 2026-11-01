@@ -65,6 +65,25 @@ pub enum Command {
     Ignore { dir: Option<PathBuf> },
     /// Validate the folder's manifests.
     Check { dir: Option<PathBuf> },
+    /// Create the next numbered migration.
+    New {
+        name: String,
+        /// Owned by a lease: up for the first session, down for the last.
+        #[arg(long, conflicts_with = "interactive")]
+        shared: bool,
+        /// Sourced into your shell, for aliases, functions, completions.
+        #[arg(long)]
+        interactive: bool,
+        /// Personal: <number>-<name>.local, ignored by git.
+        #[arg(long)]
+        local: bool,
+        /// On first use, keep .foldl/ out of git (.git/info/exclude).
+        #[arg(long, conflicts_with = "committed")]
+        private: bool,
+        /// On first use, plan to commit .foldl/ (the default without a terminal).
+        #[arg(long)]
+        committed: bool,
+    },
     /// Migrations, their state and sessions.
     Status {
         /// Also list every session.
@@ -150,6 +169,30 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
         Command::Ignore { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Ignored),
         Command::Check { dir } => trust_cmd::check(sys, dir),
+        Command::New {
+            name,
+            shared,
+            interactive,
+            local,
+            private,
+            committed,
+        } => {
+            let privacy = match (private, committed) {
+                (true, _) => Some(crate::new_cmd::Privacy::Private),
+                (_, true) => Some(crate::new_cmd::Privacy::Shared),
+                _ => None,
+            };
+            crate::new_cmd::new(
+                sys,
+                &name,
+                crate::new_cmd::Kind {
+                    shared,
+                    interactive,
+                    local,
+                },
+                privacy,
+            )
+        }
         Command::Status { all, json, events } => crate::status::status(sys, all, json, events),
         Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
