@@ -40,6 +40,9 @@ pub enum Command {
     Ignore { dir: Option<PathBuf> },
     /// Validate the folder's manifests.
     Check { dir: Option<PathBuf> },
+    /// Internal: write the environment to a file, for script runs.
+    #[command(name = "__dump-env", hide = true)]
+    DumpEnv { file: PathBuf },
 }
 
 /// Parses `args` and runs the command; returns the exit code.
@@ -70,6 +73,10 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
         Command::Ignore { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Ignored),
         Command::Check { dir } => trust_cmd::check(sys, dir),
+        Command::DumpEnv { file } => {
+            crate::runner::dump_env(&file).map_err(|e| io_failure("writing environment", e))?;
+            Ok(0)
+        }
     }
 }
 
