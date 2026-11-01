@@ -7,7 +7,7 @@ use serde::Serialize;
 
 /// foldl's exit codes. Stable from the first release: `sysexits.h` where
 /// one fits, foldl's own from 80.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Code {
     Ok,

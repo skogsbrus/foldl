@@ -214,7 +214,6 @@ mod tests {
     #[test]
     fn state_roundtrips_through_json() {
         let mut s = Session::new("id".into(), 7, Some(Shell::Bash));
-        s.pending = Some(crate::machine::Pending::default());
         s.loaded.push(Loaded {
             root: "/r".into(),
             name: "n".into(),

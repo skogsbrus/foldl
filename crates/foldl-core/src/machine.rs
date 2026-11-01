@@ -38,9 +38,7 @@ pub struct Ctx {
     pub holders: bool,
 }
 
-/// An interactive migration waiting for its result (milestone M3).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Pending {}
+pub use interactive::{Pending, Source, recovery_script, resume, source_script};
 
 /// What a script or built-in run is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +110,9 @@ pub struct Finish {
     /// Shell code beyond `export`/`unset`: aliases and interactive downs.
     pub shell_code: String,
     pub code: Code,
+    /// An interactive migration to source in the shell; the transition
+    /// continues when the shell calls back.
+    pub source: Option<Source>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,7 +192,7 @@ pub enum Event {
     Held(u32),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum Op {
     /// Unload the top of the loaded stack.
     Down,
@@ -368,6 +369,7 @@ fn finish(m: Machine) -> (Machine, Vec<Effect>) {
         env: m.env.clone(),
         shell_code: m.shell_code.clone(),
         code: m.code,
+        source: None,
     };
     let printed = summary.map(Effect::Print);
     (
@@ -477,6 +479,9 @@ fn run_up(m: Machine, fresh: Fresh) -> (Machine, Vec<Effect>) {
     let (saved, state_dir, log) = dirs(&m, &fresh.root, &fresh.migration.name);
     let before = m.env.clone();
     let prepared = prepared_env(&m.env, &fresh, &state_dir, &BTreeMap::new());
+    if fresh.migration.interactive {
+        return interactive::up(m, fresh, before, prepared, saved, state_dir);
+    }
     let migration = &fresh.migration;
     let exec = match (&migration.builtin, &migration.up) {
         (Some(builtin), _) => Exec::Builtin {
@@ -553,13 +558,27 @@ fn complete_up(
     after: Env,
     millis: u64,
 ) -> (Machine, Vec<Effect>) {
+    complete_noted(m, fresh, before, after, millis, None, None)
+}
+
+/// Records a loaded migration. Interactive ones bring the diff of their
+/// definitions; skipped ones a note.
+fn complete_noted(
+    m: Machine,
+    fresh: Fresh,
+    before: Env,
+    after: Env,
+    millis: u64,
+    note: Option<String>,
+    interactive: Option<crate::interactive::InteractiveDiff>,
+) -> (Machine, Vec<Effect>) {
     let mut m = m;
     let (saved, state_dir, log) = dirs(&m, &fresh.root, &fresh.migration.name);
     let migration = fresh.migration;
     let diff = EnvDiff::between(&before, &after);
-    let aliases: Vec<String> = match m.ctx.shell {
-        Some(_) => migration.aliases.keys().cloned().collect(),
-        None => vec![],
+    let aliases: Vec<String> = match (m.ctx.shell, migration.interactive) {
+        (Some(_), false) => migration.aliases.keys().cloned().collect(),
+        _ => vec![],
     };
     let alias_code: String = aliases
         .iter()
@@ -571,12 +590,16 @@ fn complete_up(
         })
         .collect();
     m.shell_code.push_str(&alias_code);
-    m.ups.push(up_item(
-        &migration.name,
-        &diff,
-        millis,
-        m.ctx.config.verbosity,
-    ));
+    let item = up_item(&migration.name, &diff, millis, m.ctx.config.verbosity);
+    let defs = interactive
+        .as_ref()
+        .and_then(crate::interactive::InteractiveDiff::summary);
+    let skipped = note.as_ref().map(|_| "skipped".to_string());
+    let extra: Vec<String> = defs.into_iter().chain(skipped).collect();
+    m.ups.push(match extra.is_empty() {
+        true => item,
+        false => format!("{item} [{}]", extra.join(", ")),
+    });
     let down = migration.down.map(|s| SavedScript {
         path: saved.join(&s.path),
         shebang: s.shebang,
@@ -591,13 +614,13 @@ fn complete_up(
         lease: None,
         diff,
         aliases,
-        interactive: None,
+        interactive,
         down,
         down_timeout_ms: down_timeout.as_millis() as u64,
         saved,
         state_dir,
         log,
-        note: None,
+        note,
     });
     m.env = after;
     advance(m)
@@ -716,6 +739,11 @@ fn finish_down(m: Machine, loaded: Loaded, detail: Option<String>) -> (Machine, 
         .map(|a| format!("unalias {a} 2>/dev/null\n"))
         .collect();
     m.shell_code.push_str(&unalias);
+    let undo = loaded
+        .interactive
+        .as_ref()
+        .map(crate::interactive::InteractiveDiff::undo);
+    m.shell_code.push_str(&undo.unwrap_or_default());
     let up_now = m
         .ups
         .iter()
@@ -795,6 +823,7 @@ fn notice_text(notice: &Notice, home: &str) -> String {
     }
 }
 
+mod interactive;
 mod shared;
 
 #[cfg(test)]
