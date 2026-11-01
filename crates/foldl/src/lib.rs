@@ -8,6 +8,7 @@ pub mod cli;
 pub mod disk;
 pub mod fsx;
 pub mod runner;
+pub mod session;
 pub mod sys;
 pub mod trust;
 pub mod trust_cmd;
