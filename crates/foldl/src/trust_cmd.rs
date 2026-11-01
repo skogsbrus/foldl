@@ -9,7 +9,7 @@ use foldl_core::error::{Code, Failure};
 use foldl_core::folder::{Folder, FolderFiles, Host, Issue, load};
 use foldl_core::machine::tilde;
 
-use crate::cli::io_failure;
+use crate::cli::IoContext;
 use crate::disk;
 use crate::sys::Sys;
 use crate::trust::{Store, TrustEntry, TrustState, changes};
@@ -39,7 +39,7 @@ fn home(sys: &Sys) -> String {
 
 /// Reads and validates a folder, printing its issues.
 fn validated(sys: &Sys, root: &Path) -> Result<(FolderFiles, Folder), Failure> {
-    let files = disk::read_folder(root).map_err(|e| io_failure("reading .foldl", e))?;
+    let files = disk::read_folder(root).ctx("reading .foldl")?;
     let host = Host {
         nix_available: sys.which("nix").is_some(),
     };
@@ -66,7 +66,7 @@ pub fn allow(sys: &Sys, dir: Option<PathBuf>) -> Result<i32, Failure> {
     print!("{}", changes(&previous, &files));
     store
         .set(&TrustEntry::allowed(&files, folder.hash))
-        .map_err(|e| io_failure("writing trust", e))?;
+        .ctx("writing trust")?;
     eprintln!("foldl: allowed {}", tilde(&root, &home(sys)));
     Ok(0)
 }
@@ -75,7 +75,7 @@ pub fn mark(sys: &Sys, dir: Option<PathBuf>, state: TrustState) -> Result<i32, F
     let root = resolve_root(sys, dir)?;
     store(sys)
         .set(&TrustEntry::marked(&root, state))
-        .map_err(|e| io_failure("writing trust", e))?;
+        .ctx("writing trust")?;
     let word = match state {
         TrustState::Denied => "denied",
         _ => "ignored",

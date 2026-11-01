@@ -7,9 +7,12 @@
 pub mod cli;
 pub mod disk;
 pub mod fsx;
+pub mod gather;
+pub mod hook;
 pub mod interp;
 pub mod runner;
 pub mod session;
+pub mod settings;
 pub mod sys;
 pub mod trust;
 pub mod trust_cmd;

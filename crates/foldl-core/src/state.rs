@@ -72,6 +72,9 @@ pub struct Session {
     /// Token of the last prompt's scan: unchanged means nothing to do.
     #[serde(default)]
     pub scan: Option<String>,
+    /// Files matched by `watch` globs, per folder, stat'ed by the scan.
+    #[serde(default)]
+    pub watched: BTreeMap<PathBuf, Vec<PathBuf>>,
     /// Folders whose up failed, with the fingerprint at the time; not
     /// retried until it changes or the session leaves the folder.
     #[serde(default)]

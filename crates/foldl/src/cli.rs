@@ -30,8 +30,33 @@ pub struct Cli {
     pub command: Command,
 }
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum ShellArg {
+    Bash,
+    Zsh,
+}
+
+impl ShellArg {
+    pub fn shell(self) -> foldl_core::render::Shell {
+        match self {
+            ShellArg::Bash => foldl_core::render::Shell::Bash,
+            ShellArg::Zsh => foldl_core::render::Shell::Zsh,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Print the shell hook: eval "$(foldl hook zsh)" in your rc file.
+    Hook { shell: ShellArg },
+    /// Internal: one prompt's transition, printed as shell code.
+    #[command(hide = true)]
+    HookStep {
+        shell: ShellArg,
+        /// The shell's PID ($$).
+        #[arg(long)]
+        pid: u32,
+    },
     /// Allow the folder's .foldl/ to load, showing what changed.
     Allow { dir: Option<PathBuf> },
     /// Don't load the folder, and say so.
@@ -68,19 +93,40 @@ pub fn run(args: Vec<OsString>, sys: Sys) -> i32 {
 }
 
 fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
+    let verbosity = match (cli.quiet, cli.verbose) {
+        (true, _) => Some(foldl_core::config::Verbosity::Quiet),
+        (false, true) => Some(foldl_core::config::Verbosity::Verbose),
+        (false, false) => None,
+    };
     match cli.command {
+        Command::Hook { shell } => {
+            print!("{}", crate::hook::hook(sys, shell.shell()));
+            Ok(0)
+        }
+        Command::HookStep { shell, pid } => {
+            crate::hook::hook_step(sys, shell.shell(), pid, verbosity)
+        }
         Command::Allow { dir } => trust_cmd::allow(sys, dir),
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
         Command::Ignore { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Ignored),
         Command::Check { dir } => trust_cmd::check(sys, dir),
         Command::DumpEnv { file } => {
-            crate::runner::dump_env(&file).map_err(|e| io_failure("writing environment", e))?;
+            crate::runner::dump_env(&file).ctx("writing environment")?;
             Ok(0)
         }
     }
 }
 
-/// An I/O error as an internal failure.
-pub fn io_failure(what: &str, e: std::io::Error) -> Failure {
-    Failure::new(Code::Internal, format!("{what}: {e}"))
+/// I/O errors as internal failures, with what was being done.
+pub trait IoContext<T> {
+    fn ctx(self, what: &str) -> Result<T, Failure>;
+}
+
+impl<T> IoContext<T> for std::io::Result<T> {
+    fn ctx(self, what: &str) -> Result<T, Failure> {
+        match self {
+            Ok(value) => Ok(value),
+            Err(e) => Err(Failure::new(Code::Internal, format!("{what}: {e}"))),
+        }
+    }
 }

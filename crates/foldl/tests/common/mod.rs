@@ -129,3 +129,32 @@ impl From<std::process::Output> for Out {
         }
     }
 }
+
+impl Fixture {
+    /// Runs `script` in `shell` with the hook installed, from `$HOME`.
+    pub fn shell(&self, shell: &TestShell, script: &str) -> Out {
+        let setup = format!("eval \"$('{}' hook {})\"\n", foldl().display(), shell.kind);
+        let mut cmd = self.cmd(&[]);
+        cmd.current_dir(&self.home);
+        let mut cmd = std::process::Command::new(&shell.program);
+        cmd.arg("-c")
+            .arg(setup + script)
+            .current_dir(&self.home)
+            .env_clear();
+        cmd.env("HOME", &self.home)
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+        if let Some(value) = std::env::var_os("LLVM_PROFILE_FILE") {
+            cmd.env("LLVM_PROFILE_FILE", value);
+        }
+        Out::from(cmd.output().unwrap())
+    }
+
+    /// Writes and allows a folder's migrations: `(path under .foldl, content)`.
+    pub fn folder(&self, rel: &str, files: &[(&str, &str)]) {
+        for (path, content) in files {
+            self.write(&format!("{rel}/.foldl/{path}"), content);
+        }
+        let out = self.run(&["allow", self.project.join(rel).to_str().unwrap()]);
+        assert_eq!(out.code, 0, "{out:?}");
+    }
+}
