@@ -56,6 +56,12 @@ pub enum Command {
         /// The shell's PID ($$).
         #[arg(long)]
         pid: u32,
+        /// The interactive migration the shell just sourced.
+        #[arg(long)]
+        interactive_done: Option<String>,
+        /// Its exit status.
+        #[arg(long, default_value_t = 0)]
+        status: i32,
     },
     /// Allow the folder's .foldl/ to load, showing what changed.
     Allow { dir: Option<PathBuf> },
@@ -200,8 +206,14 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
             print!("{}", crate::hook::hook(sys, shell.shell()));
             Ok(0)
         }
-        Command::HookStep { shell, pid } => {
-            crate::hook::hook_step(sys, shell.shell(), pid, verbosity)
+        Command::HookStep {
+            shell,
+            pid,
+            interactive_done,
+            status,
+        } => {
+            let callback = interactive_done.map(|name| crate::hook::Callback { name, status });
+            crate::hook::hook_step(sys, shell.shell(), pid, verbosity, callback)
         }
         Command::Allow { dir } => trust_cmd::allow(sys, dir),
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
