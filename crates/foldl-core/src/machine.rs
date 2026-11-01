@@ -160,6 +160,9 @@ pub struct Machine {
     wait: Wait,
     ups: Vec<String>,
     downs: Vec<String>,
+    /// Migrations unloaded because an up failed.
+    rolled_back: Vec<String>,
+    rolling_back: bool,
     shell_code: String,
     code: Code,
     fingerprints: BTreeMap<PathBuf, String>,
@@ -210,6 +213,8 @@ pub fn start(
         wait: Wait::Idle,
         ups: vec![],
         downs: vec![],
+        rolled_back: vec![],
+        rolling_back: false,
         shell_code: String::new(),
         code,
         fingerprints,
@@ -290,7 +295,7 @@ fn summary(m: &Machine) -> Option<String> {
         [] => String::new(),
         _ => format!("foldl {arrow} {}\n", items.join(" · ")),
     };
-    let text = line("↓", &m.downs) + &line("↑", &m.ups);
+    let text = line("↓", &m.downs) + &line("↑", &m.ups) + &line("↩ rolled back", &m.rolled_back);
     (m.ctx.config.verbosity != Verbosity::Quiet && !text.is_empty()).then_some(text)
 }
 
@@ -539,6 +544,7 @@ fn fail_up(
         .take_while(|l| l.root == fresh.root)
         .count();
     m.queue = std::iter::repeat_n(Op::Down, loaded_here).collect();
+    m.rolling_back = true;
     let text = failure_text(&message, &fresh.migration.name, &tail);
     then(vec![Effect::Print(text)], advance(m))
 }
@@ -605,7 +611,18 @@ fn finish_down(m: Machine, loaded: Loaded) -> (Machine, Vec<Effect>) {
         .map(|a| format!("unalias {a} 2>/dev/null\n"))
         .collect();
     m.shell_code.push_str(&unalias);
-    m.downs.push(loaded.name.clone());
+    let up_now = m
+        .ups
+        .iter()
+        .rposition(|item| item.split(' ').next() == Some(loaded.name.as_str()));
+    match (m.rolling_back, up_now) {
+        (true, Some(at)) => {
+            m.ups.remove(at);
+            m.rolled_back.push(loaded.name.clone());
+        }
+        (true, None) => m.rolled_back.push(loaded.name.clone()),
+        (false, _) => m.downs.push(loaded.name.clone()),
+    }
     then(vec![Effect::Remove(loaded.saved)], advance(m))
 }
 

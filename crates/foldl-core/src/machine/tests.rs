@@ -188,7 +188,7 @@ fn a_failed_up_rolls_back_its_folder() {
         "{printed}"
     );
     assert!(
-        printed.ends_with("foldl ↓ one\nfoldl ↑ o (+1 var) · one (+1 var)\n"),
+        printed.ends_with("foldl ↑ o (+1 var)\nfoldl ↩ rolled back one\n"),
         "{printed}"
     );
 }
@@ -492,4 +492,41 @@ fn leaving_a_folder_forgets_its_failure() {
         t.finish.session.cumulative(),
         EnvDiff::between(&env(&[]), &t.finish.env)
     );
+}
+
+#[test]
+fn a_failed_reload_rolls_back_what_was_loaded_before() {
+    let first = drive(
+        start(session(), ctx(), env(&[]), &[allowed("/r", "f", SCRIPTS)]),
+        ok,
+    );
+    let changed: &[(&str, &str)] = &[
+        SCRIPTS[0],
+        SCRIPTS[1],
+        SCRIPTS[2],
+        SCRIPTS[3],
+        ("2-two/up.sh", "#!/bin/sh\nexit 1\n"),
+    ];
+    let t = drive(
+        start(
+            first.finish.session,
+            ctx(),
+            first.finish.env,
+            &[allowed("/r", "f2", changed)],
+        ),
+        failing(
+            "two",
+            Outcome::Exited {
+                status: 1,
+                env: None,
+            },
+        ),
+    );
+    assert!(
+        t.printed()
+            .ends_with("foldl ↓ two\nfoldl ↩ rolled back one\n"),
+        "{}",
+        t.printed()
+    );
+    assert!(t.finish.session.loaded.is_empty());
 }
