@@ -863,6 +863,64 @@ corrections to contradictions found in it. Each entry: date, the question,
 the decision, and why. Existing spec text above is not rewritten; it is
 corrected here.
 
+- **2026-11-01 · Quoting in `render`.** Q: the spec says `$'…'` quoting.
+  Decision: values that are valid UTF-8 are single-quoted (`'\''` for a
+  quote); only invalid UTF-8 uses `$'\xHH'`. Why: single quotes keep every
+  byte but NUL literally in bash 3.2, bash 5 and zsh, so there is no escape
+  table to get wrong; the round-trip property test covers both forms.
+- **2026-11-01 · Which ancestors load.** Q: what happens below a folder
+  that can't load? Decision: the stack is every ancestor from `/` down,
+  stopping at the first folder that is untrusted, denied, invalid or whose
+  `up` failed; `ignored` folders are skipped and don't stop it. Why: an
+  inner folder may depend on its parent's env, and loading it without the
+  parent would be a silent partial load.
+- **2026-11-01 · Rollback scope.** Q: a failed `up` rolls back "the
+  migrations that already ran"; does that include outer folders? Decision:
+  only the failing folder's migrations; outer folders stay loaded. The
+  folder is not retried until its fingerprint changes or the session leaves
+  it. Why: "the folder is left unloaded" names one folder, and retrying at
+  every prompt would rerun a failing script forever.
+- **2026-11-01 · Edits to a loaded folder.** Q: editing `.foldl/` changes
+  its hash, so it is no longer allowed; unload it? Decision: a loaded
+  folder that changes and is no longer allowed (or no longer valid) stays
+  loaded as it was, with a one-time notice to run `foldl allow`; after the
+  allow, only the changed migrations reload. Why: unloading would stop
+  shared services because a comment changed, and "Changes while loaded"
+  describes reloading per migration.
+- **2026-11-01 · Per-folder names in state.** Q: saved copies and logs are
+  `saved/<migration>` and `logs/<migration>.log`, but two folders in one
+  stack may both have a migration named `env`. Decision: use
+  `<name>-<folder key>` (first 12 hex digits of the sha256 of the folder
+  path) for `saved/`, `logs/` and the new `data/` directories. `foldl logs
+  <name>` resolves the name in the current stack, innermost first.
+- **2026-11-01 · `FOLDL_STATE`.** Q: the spec names "the migration's state
+  directory" without a location. Decision: `<owner>/data/<name>-<folder
+  key>/`, where the owner is the session or lease directory. It lasts as
+  long as the session for `session` migrations and is kept across lease
+  lifetimes for `shared` ones, so a database's data directory survives a
+  restart. Why: services need persistent data; sessions are ephemeral.
+- **2026-11-01 · `[env]` interpolation details.** Q: what about `$` not
+  followed by `{` or `$`, and unknown names? Decision: a lone `$` is
+  literal; `${NAME}` with a name other than `FOLDL_ROOT`, `FOLDL_STATE`,
+  `HOME` or a `[ports]` name is a validation error. `path_add` entries must
+  be relative. Why: errors at `foldl check` beat surprising values.
+- **2026-11-01 · Non-interactive `[aliases]` down.** Q: how is an alias
+  from a non-interactive migration undone? Decision: `unalias`; a shadowed
+  alias is not restored (that needs a snapshot of the shell, which only
+  interactive migrations take). Why: `hook-step` runs in a subprocess and
+  can't see the shell's aliases.
+- **2026-11-01 · `.DS_Store` in `.foldl/`.** Q: "anything else in `.foldl/`
+  is an error". Decision: `.DS_Store` is ignored (still hashed). Why:
+  Finder creates it; failing on it would be noise.
+- **2026-11-01 · Licenses.** Q: cargo-deny allows only permissive licenses;
+  `unicode-ident` (via serde's derive) is `Unicode-3.0`. Decision: allow
+  `Unicode-3.0`, which is permissive. Why: there is no serde without it.
+- **2026-11-01 · User config keys.** Q: the spec lists the settings but no
+  names. Decision: `version`, `verbosity` (`quiet`/`normal`/`verbose`),
+  `timeout`, `nix_timeout`, `down_timeout`, `on_dirty`,
+  `trusted_prefixes` (`~/` expanded) and `port_range` (`[low, high]`,
+  default `[20000, 29999]`). Unknown keys are errors, as in manifests.
+
 ## Prior art
 
 See [COMPETITORS.md](COMPETITORS.md) for the full comparison.
