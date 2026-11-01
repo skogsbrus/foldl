@@ -1063,6 +1063,26 @@ corrected here.
   good key is remembered per folder; on a failed evaluation foldl uses it
   and warns. `nix` must be on `PATH` even when the cache would do, so a
   folder behaves the same on a machine without Nix.
+- **2026-11-01 · Interactive snapshots.** Decisions: the hook defines
+  `__foldl_snap`, which writes, privately, the shell's own listings
+  (`alias -p`/`alias -L`, `declare -f`/`typeset -f`, `complete -p` in bash,
+  `compdef` lines from `$_comps` in zsh) separated by marker lines; each
+  definition's printed text is also the code that restores it. An
+  interactive migration's `[aliases]` are applied in the shell after
+  `up.sh`, inside the snapshots. While sourcing, `FOLDL_ROOT` and
+  `FOLDL_STATE` are plain shell variables, unset afterwards.
+- **2026-11-01 · Interrupted interactive migrations.** Q: Ctrl-C during the
+  sourced script stops the callback. Decision: Ctrl-C works while sourcing;
+  the next prompt finds the pending migration, takes the "after" snapshot
+  and reports exit 130, which undoes the partial definitions and rolls
+  back. If the "before" snapshot was never written, no definitions are
+  undone (only env), since "everything is new" would remove all of the
+  shell's functions.
+- **2026-11-01 · Interactive migrations outside a shell.** Decision: `exec`,
+  `export` and agent sessions load an interactive migration as skipped,
+  with a note in `foldl status`, like a shebang for the other shell.
+  Limitation: in zsh the hook runs with `localoptions` (needed for
+  `localtraps`), so `setopt` in an interactive `up.sh` doesn't outlive it.
 
 ## Prior art
 
