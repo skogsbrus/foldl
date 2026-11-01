@@ -1,0 +1,20 @@
+[package]
+name = "foldl"
+description = "Run code when a shell enters or leaves a folder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "foldl"
+path = "src/main.rs"
+
+[dependencies]
+foldl-core = { path = "../foldl-core", version = "0.1.0" }
+
+[dev-dependencies]

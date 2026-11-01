@@ -1,0 +1,15 @@
+[package]
+name = "foldl-core"
+description = "Pure core of foldl: state, events, effects and the step function"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
