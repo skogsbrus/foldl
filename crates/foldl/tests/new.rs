@@ -99,6 +99,12 @@ fn private_folders_go_to_info_exclude() {
         f.project.join(".foldl/003-inner").exists(),
         "nearest .foldl, not cwd"
     );
+    assert_eq!(f.run(&["allow"]).code, 0);
+    let status = f.run(&["status"]).stdout;
+    assert!(
+        status.starts_with("~/project  (0 sessions, private (not committed))\n"),
+        "{status}"
+    );
 }
 
 /// Runs `foldl new` on a terminal (via script(1)) answering `answer`.

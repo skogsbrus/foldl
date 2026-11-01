@@ -69,7 +69,9 @@ fn folder_json(info: &FolderInfo, mine: Option<&Session>, all: &[Session]) -> Va
             json!({"number": number, "name": name, "scope": scope, "state": state, "note": loaded.and_then(|l| l.note.clone())})
         })
         .collect();
-    json!({"root": info.root, "trust": trust, "sessions": all.iter().filter(|s| loaded_in(s)).count(), "migrations": migrations})
+    let private =
+        crate::git::toplevel(&info.root).is_some() && crate::git::is_ignored(&info.root, ".foldl");
+    json!({"root": info.root, "trust": trust, "private": private, "sessions": all.iter().filter(|s| loaded_in(s)).count(), "migrations": migrations})
 }
 
 fn folder_text(folder: &Value, home: &str) -> String {
@@ -78,7 +80,14 @@ fn folder_text(folder: &Value, home: &str) -> String {
         "allowed" => String::new(),
         other => format!(", {other}"),
     };
-    let head = format!("{root}  ({} sessions{trust})\n", folder["sessions"]);
+    let private = match folder["private"].as_bool() {
+        Some(true) => ", private (not committed)",
+        _ => "",
+    };
+    let head = format!(
+        "{root}  ({} sessions{trust}{private})\n",
+        folder["sessions"]
+    );
     let width = folder["migrations"]
         .as_array()
         .into_iter()
