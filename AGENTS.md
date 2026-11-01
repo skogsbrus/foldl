@@ -1,0 +1,2 @@
+- Use Nix flakes for any dependencies
+- Use ../direnv as product reference - not code reference
