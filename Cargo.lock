@@ -192,6 +192,9 @@ version = "0.1.0"
 dependencies = [
  "foldl-core",
  "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
