@@ -19,6 +19,29 @@ pub struct Sys {
 }
 
 impl Sys {
+    /// This process's environment, physical working directory and
+    /// executable.
+    pub fn current() -> Sys {
+        Sys {
+            vars: std::env::vars_os().collect(),
+            cwd: std::env::current_dir().unwrap_or_default(),
+            exe: std::env::current_exe().unwrap_or_default(),
+        }
+    }
+
+    /// Finds a program on `$PATH`.
+    pub fn which(&self, program: &str) -> Option<PathBuf> {
+        let path = self.var("PATH").unwrap_or_default();
+        path.split(':')
+            .map(|dir| PathBuf::from(dir).join(program))
+            .find(|p| is_executable(p))
+    }
+
+    /// `dir` made absolute against the working directory.
+    pub fn absolute(&self, dir: &std::path::Path) -> PathBuf {
+        self.cwd.join(dir)
+    }
+
     pub fn var(&self, name: &str) -> Option<String> {
         self.vars
             .get(&OsString::from(name))
@@ -55,6 +78,11 @@ impl Sys {
     }
 }
 
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +111,16 @@ mod tests {
         assert_eq!(p.data, PathBuf::from("/h/.local/share/foldl"));
         assert_eq!(p.config, PathBuf::from("/h/.config/foldl"));
         assert_eq!(sys(&[]).paths().state, PathBuf::from("/.local/state/foldl"));
+    }
+
+    #[test]
+    fn finds_programs() {
+        let s = sys(&[("PATH", "/nonexistent:/bin")]);
+        assert_eq!(s.which("sh"), Some(PathBuf::from("/bin/sh")));
+        assert_eq!(s.which("no-such-program"), None);
+        assert_eq!(sys(&[]).which("sh"), None);
+        assert_eq!(s.absolute("x".as_ref()), PathBuf::from("/x"));
+        assert!(Sys::current().exe.exists());
     }
 
     #[test]
