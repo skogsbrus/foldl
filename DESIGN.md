@@ -989,6 +989,62 @@ corrected here.
   repository's root commits; another folder with the same `.foldl/` hash is
   trusted if its repository shares one of them. `deny`/`ignore` on a path
   still win.
+- **2026-11-01 · Lease state is keyed by migration name.** Q: a lease may
+  hold several shared migrations, and a custom key may be used from
+  several folders. Decision: the lease's `state.json` lists entries by
+  migration name. Folders sharing a custom lease should use the same
+  migration name for the same resource; a different name is a different
+  resource in the same lease. Why: lease keys name resources, and repo
+  leases must match the same migration across worktrees whose paths
+  differ.
+- **2026-11-01 · Leaving a lease, step by step.** Q: the spec releases the
+  hold, then tries `LOCK_EX | LOCK_NB`; with several migrations in one
+  lease the first down would see this session still holding it. Decision:
+  every shared down releases this session's hold, tests for "last", runs
+  the down if so, and takes a new hold at commit if the session still has
+  other migrations of that lease loaded. Why: correct for both a full
+  leave and unloading one migration by hand.
+- **2026-11-01 · Closed terminals tear down shared migrations too.** Q: the
+  spec has the session holder run "that session's saved custom downs" and
+  lease holders "simply exit", which would leave a service running when
+  the last terminal is closed, against the goal of teardown "including
+  when sessions crash or terminals are closed". Decision: the session
+  holder runs the session's whole leave: custom downs and the lease
+  protocol, so a dead last session's shared downs run. If both holders
+  die too (e.g. a reboot), the next session that gets the lease
+  exclusively finds entries nobody holds and runs their saved downs before
+  its own ups.
+- **2026-11-01 · What a lease directory keeps.** Q: "a lease directory [is
+  removed] when its lease ends clean". Decision: when no entries remain,
+  `state.json` is removed but `mutex.lock`, `lease.lock`, `data/` and
+  `logs/` stay. Why: unlinking a lock file another session has just opened
+  would give two sessions different locks; `data/` holds services' data
+  (`FOLDL_STATE`).
+- **2026-11-01 · Saved copies of shared migrations.** Decision: they live in
+  the lease directory and belong to the lease: sessions that joined never
+  remove them, and a successful shared down does.
+- **2026-11-01 · Port selection.** Decision: candidates cover the configured
+  range starting at an offset derived from the lease, migration and name
+  (so a restart tends to get the same port), skipping ports in the
+  registry and ports that can't be bound on 127.0.0.1 right now.
+- **2026-11-01 · `foldl up | down | redo`.** Q: these run "by hand", but a
+  subprocess can't change the shell's env. Decision: they mark the
+  migration in the session (held down, back up, or reload), and the next
+  prompt (or `foldl export` for agents) carries it out. `redo` of a shared
+  migration restarts it even while other sessions hold the lease, with a
+  warning naming them; joined sessions keep their copy of the env until
+  they re-enter. `down --force <name>` retries a dirty lease's down right
+  away, needing no session. As with any change, unloading a migration
+  also unloads and reloads the ones after it in the stack.
+- **2026-11-01 · Holder details.** Decision: holders run in their own
+  process group with stdio on `/dev/null`, ignore SIGINT and SIGHUP, and
+  stop on SIGTERM or when the parent exits. A session holder writes what
+  it did to `$XDG_STATE_HOME/foldl/holder.log`. Holders are described with
+  the parent's process name and terminal from `ps`. The dirty-lease
+  question is read from `/dev/tty`; without one the answer is "abort".
+- **2026-11-01 · Lease I/O errors.** Decision: if a lease file can't be
+  read or written, an up fails like any other (its folder rolls back); a
+  down still applies the derived down, reported as "(lease error)".
 
 ## Prior art
 
