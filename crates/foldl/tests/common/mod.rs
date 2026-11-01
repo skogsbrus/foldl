@@ -63,3 +63,69 @@ pub fn shells() -> Vec<TestShell> {
 pub fn foldl() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_foldl"))
 }
+
+/// An isolated world: its own HOME, XDG directories and a project folder.
+pub struct Fixture {
+    pub dir: tempfile::TempDir,
+    pub home: PathBuf,
+    pub project: PathBuf,
+}
+
+impl Fixture {
+    pub fn new() -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().canonicalize().unwrap().join("home");
+        let project = home.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        Fixture { dir, home, project }
+    }
+
+    /// Writes a file under the project, creating directories.
+    pub fn write(&self, rel: &str, content: &str) -> PathBuf {
+        let path = self.project.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    /// A `foldl` command with a clean environment, run in the project.
+    pub fn cmd(&self, args: &[&str]) -> Command {
+        let mut cmd = Command::new(foldl());
+        cmd.args(args).current_dir(&self.project).env_clear();
+        cmd.env("HOME", &self.home)
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+        for var in [
+            "LLVM_PROFILE_FILE",
+            "FOLDL_TEST_BASH3",
+            "FOLDL_TEST_BASH5",
+            "FOLDL_TEST_ZSH",
+        ] {
+            if let Some(value) = std::env::var_os(var) {
+                cmd.env(var, value);
+            }
+        }
+        cmd
+    }
+
+    pub fn run(&self, args: &[&str]) -> Out {
+        Out::from(self.cmd(args).output().unwrap())
+    }
+}
+
+/// A finished command's exit code and text output.
+#[derive(Debug)]
+pub struct Out {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl From<std::process::Output> for Out {
+    fn from(o: std::process::Output) -> Out {
+        Out {
+            code: o.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
+        }
+    }
+}
