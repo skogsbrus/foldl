@@ -8,6 +8,7 @@
 //! and feeds the results back as events.
 
 pub mod config;
+pub mod dotenv;
 pub mod env;
 pub mod error;
 pub mod folder;
