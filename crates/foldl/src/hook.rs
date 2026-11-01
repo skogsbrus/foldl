@@ -25,7 +25,9 @@ pub fn hook(sys: &Sys, shell: Shell) -> String {
         Shell::Bash => format!(
             r#"_foldl_hook() {{
   local previous_exit_status=$?
+  trap '' INT
   eval "$({exe} hook-step bash --pid $$)"
+  trap - INT
   return $previous_exit_status
 }}
 if [[ ";${{PROMPT_COMMAND:-}};" != *";_foldl_hook;"* ]]; then
@@ -35,6 +37,8 @@ fi
         ),
         Shell::Zsh => format!(
             r#"_foldl_hook() {{
+  setopt localoptions localtraps
+  trap '' INT
   eval "$({exe} hook-step zsh --pid $$)"
 }}
 autoload -Uz add-zsh-hook

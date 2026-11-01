@@ -274,3 +274,37 @@ fn trusted_prefixes_load_without_allow() {
     let out = f.shell(&shells()[0], "cd project; _foldl_hook; echo \"A=$A\"");
     assert_eq!(out.stdout, "A=1\n", "{out:?}");
 }
+
+#[test]
+fn changes_while_loaded_reload_only_what_changed() {
+    let f = Fixture::new();
+    f.folder(".", &[
+        ("1-a/manifest.toml", "version = 1"),
+        ("1-a/up.sh", "#!/bin/sh\necho a >> \"$HOME/calls\"\nexport A=\"$(cat \"$FOLDL_ROOT/config\")\"\n"),
+        ("2-b/manifest.toml", "version = 1\nwatch = [\"config\"]"),
+        ("2-b/up.sh", "#!/bin/sh\necho b >> \"$HOME/calls\"\nexport B=\"$(cat \"$FOLDL_ROOT/config\")\"\n"),
+    ]);
+    f.write("config", "one");
+    let foldl = common::foldl().display().to_string();
+    let script = format!(
+        "cd project; _foldl_hook; echo \"$A $B\"\n\
+         sleep 0.01; echo two > config; _foldl_hook; echo \"$A $B\"\n\
+         echo '# edited' >> .foldl/2-b/up.sh; _foldl_hook; echo \"$A $B\"\n\
+         '{foldl}' allow >/dev/null 2>&1; _foldl_hook; echo \"$A $B\""
+    );
+    let out = f.shell(&shells()[0], &script);
+    assert_eq!(
+        out.stdout, "one one\none two\none two\none two\n",
+        "{out:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.home.join("calls")).unwrap(),
+        "a\nb\nb\nb\n"
+    );
+    assert!(
+        out.stderr.contains(
+            "foldl ! ~/project/.foldl changed; run 'foldl allow ~/project' to reload it\n"
+        ),
+        "{out:?}"
+    );
+}
