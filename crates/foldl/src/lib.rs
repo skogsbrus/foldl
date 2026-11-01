@@ -13,6 +13,7 @@ pub mod hold;
 pub mod hook;
 pub mod interp;
 pub mod leases;
+pub mod manual;
 pub mod new_cmd;
 pub mod oneshot;
 pub mod runner;

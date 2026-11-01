@@ -84,6 +84,17 @@ pub enum Command {
         #[arg(long)]
         committed: bool,
     },
+    /// Load a migration unloaded with `foldl down`, at the next prompt.
+    Up { name: String },
+    /// Unload a migration at the next prompt.
+    Down {
+        name: String,
+        /// Retry a dirty shared migration's down now.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Reload a migration at the next prompt; restarts a shared one.
+    Redo { name: String },
     /// Migrations, their state and sessions.
     Status {
         /// Also list every session.
@@ -220,6 +231,12 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
                 privacy,
             )
         }
+        Command::Up { name } => crate::manual::mark(sys, &name, crate::manual::Action::Up),
+        Command::Down { name, force: false } => {
+            crate::manual::mark(sys, &name, crate::manual::Action::Down)
+        }
+        Command::Down { name, force: true } => crate::manual::force_down(sys, &name),
+        Command::Redo { name } => crate::manual::mark(sys, &name, crate::manual::Action::Redo),
         Command::Status { all, json, events } => crate::status::status(sys, all, json, events),
         Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
