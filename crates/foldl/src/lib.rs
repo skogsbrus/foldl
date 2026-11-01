@@ -8,6 +8,7 @@ pub mod cli;
 pub mod disk;
 pub mod fsx;
 pub mod gather;
+pub mod git;
 pub mod hook;
 pub mod interp;
 pub mod oneshot;
