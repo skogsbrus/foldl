@@ -91,6 +91,8 @@ pub struct Ran {
     /// Last lines of the log.
     pub tail: Vec<String>,
     pub millis: u64,
+    /// Things the user should know even when the run succeeded.
+    pub warnings: Vec<String>,
 }
 
 /// The end of a run.
@@ -217,6 +219,18 @@ pub fn start(
 
 /// Folds one event into the machine.
 pub fn step(m: Machine, event: Event) -> (Machine, Vec<Effect>) {
+    let warnings: Vec<Effect> = match &event {
+        Event::Ran(ran) => ran
+            .warnings
+            .iter()
+            .map(|w| Effect::Print(format!("foldl ! {w}\n")))
+            .collect(),
+        _ => vec![],
+    };
+    then(warnings, fold(m, event))
+}
+
+fn fold(m: Machine, event: Event) -> (Machine, Vec<Effect>) {
     let mut m = m;
     let wait = std::mem::replace(&mut m.wait, Wait::Idle);
     match (wait, event) {

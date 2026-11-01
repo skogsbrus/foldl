@@ -25,6 +25,7 @@ fn ok(effect: &Effect) -> Option<Event> {
                 },
                 tail: vec![],
                 millis: 1,
+                warnings: vec![],
             }))
         }
         _ => None,
@@ -38,6 +39,7 @@ fn failing(name: &'static str, outcome: Outcome) -> impl FnMut(&Effect) -> Optio
             outcome: outcome.clone(),
             tail: vec!["boom".into()],
             millis: 1,
+            warnings: vec!["old bash".into()],
         })),
         other => ok(other),
     }
@@ -182,7 +184,7 @@ fn a_failed_up_rolls_back_its_folder() {
     let printed = t.printed();
     assert!(
         printed
-            .starts_with("foldl ✗ two: up failed (exit 3)\n  │ boom\n  full log: foldl logs two\n"),
+            .starts_with("foldl ! old bash\nfoldl ✗ two: up failed (exit 3)\n  │ boom\n  full log: foldl logs two\n"),
         "{printed}"
     );
     assert!(
@@ -293,6 +295,7 @@ fn unexpected_events_are_internal_errors() {
             outcome: Outcome::TimedOut,
             tail: vec![],
             millis: 0,
+            warnings: vec![],
         }),
     );
     assert!(matches!(&effects[0], Effect::Print(t) if t.contains("internal error")));
