@@ -67,6 +67,31 @@ pub fn infos(
     (infos, watched)
 }
 
+/// Each shared migration's lease. Repository leases key on the common git
+/// dir, shared by all worktrees; that asks git only when needed.
+fn leases(
+    root: &Path,
+    folder: &foldl_core::folder::Folder,
+) -> BTreeMap<String, foldl_core::lease::LeaseRef> {
+    let wants_repo = folder
+        .migrations
+        .iter()
+        .any(|m| m.lease == Some(foldl_core::folder::LeaseSpec::Repo));
+    let repo = crate::git::common_dir(root)
+        .filter(|_| wants_repo)
+        .and_then(|d| d.canonicalize().ok());
+    folder
+        .migrations
+        .iter()
+        .filter_map(|m| {
+            Some((
+                m.name.clone(),
+                foldl_core::lease::lease_ref(m.lease.as_ref()?, root, repo.as_deref()),
+            ))
+        })
+        .collect()
+}
+
 /// Trust keyed on content: the same `.foldl/` was allowed in a repository
 /// sharing a root commit with this one.
 fn reused(root: &Path, folder: &foldl_core::folder::Folder, trust: &Store) -> bool {
@@ -132,6 +157,7 @@ fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderSta
     all.dedup();
     (
         FolderStatus::Allowed {
+            leases: leases(root, &folder),
             folder: Box::new(folder),
             watch,
         },

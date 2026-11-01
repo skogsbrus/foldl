@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::folder::{Folder, Hash, Issue, Migration};
+use crate::lease::LeaseRef;
 use crate::manifest::Scope;
 use crate::state::{Loaded, Session};
 
@@ -31,6 +32,8 @@ pub enum FolderStatus {
     Allowed {
         folder: Box<Folder>,
         watch: BTreeMap<String, Hash>,
+        /// The lease of each shared migration, resolved by the interpreter.
+        leases: BTreeMap<String, LeaseRef>,
     },
     /// Not allowed. `changed`: it was allowed with different content.
     Untrusted {
@@ -47,6 +50,8 @@ pub struct Fresh {
     pub root: PathBuf,
     pub migration: Migration,
     pub watch: Hash,
+    #[serde(default)]
+    pub lease: Option<LeaseRef>,
 }
 
 /// Something to tell the user about a folder, once per fingerprint.
@@ -167,7 +172,11 @@ fn wanted<'a>(session: &'a Session, folders: &[FolderInfo]) -> (Vec<Want<'a>>, V
         match &info.status {
             FolderStatus::Ignored => continue,
             FolderStatus::Allowed { .. } if failed => break,
-            FolderStatus::Allowed { folder, watch } => {
+            FolderStatus::Allowed {
+                folder,
+                watch,
+                leases,
+            } => {
                 let held =
                     |m: &&Migration| !session.held_down.contains(&(root.clone(), m.name.clone()));
                 wants.extend(folder.migrations.iter().filter(held).map(|m| {
@@ -176,6 +185,7 @@ fn wanted<'a>(session: &'a Session, folders: &[FolderInfo]) -> (Vec<Want<'a>>, V
                         root: root.clone(),
                         migration: m.clone(),
                         watch,
+                        lease: leases.get(&m.name).cloned(),
                     }))
                 }));
             }

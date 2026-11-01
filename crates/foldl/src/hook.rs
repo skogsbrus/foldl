@@ -86,12 +86,11 @@ pub fn hook_step(
         config,
         shell: Some(shell),
         prompt,
+        holders: true,
     };
     let runner = Runner::new(sys.exe.clone(), paths.session(&session.id)).ctx("signals")?;
-    let (finish, events) = drive(
-        &mut RealWorld { runner: &runner },
-        start(session, ctx, env, &infos),
-    );
+    let mut world = RealWorld::new(&runner, sys, &session, &ctx.config);
+    let (finish, events) = drive(&mut world, start(session, ctx, env, &infos));
     let mut session = finish.session;
     session.scan = Some(scan.token);
     session.watched = watched;

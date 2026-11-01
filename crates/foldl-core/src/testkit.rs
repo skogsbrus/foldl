@@ -5,7 +5,9 @@
 //! driver that replays a scripted world against the machine.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use crate::lease::lease_ref;
 
 use crate::config::Config;
 use crate::env::{Env, Value};
@@ -38,6 +40,16 @@ pub fn allowed(root: &str, fingerprint: &str, pairs: &[(&str, &str)]) -> FolderI
         root: PathBuf::from(root),
         fingerprint: fingerprint.to_string(),
         status: FolderStatus::Allowed {
+            leases: folder
+                .migrations
+                .iter()
+                .filter_map(|m| {
+                    Some((
+                        m.name.clone(),
+                        lease_ref(m.lease.as_ref()?, Path::new(root), None),
+                    ))
+                })
+                .collect(),
             folder: Box::new(folder),
             watch: BTreeMap::new(),
         },
@@ -74,6 +86,7 @@ pub fn ctx() -> Ctx {
         config: Config::default(),
         shell: Some(crate::render::Shell::Bash),
         prompt: false,
+        holders: false,
     }
 }
 

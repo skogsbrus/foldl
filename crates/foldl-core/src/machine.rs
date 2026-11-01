@@ -18,6 +18,7 @@ use crate::config::{Config, Verbosity};
 use crate::env::{Env, EnvDiff, Value, tracked};
 use crate::error::{Code, Failure};
 use crate::folder::{Builtin, Shebang, expand};
+use crate::lease::{Holder, LeaseRef, LeaseState};
 use crate::manifest::format_duration;
 use crate::plan::{FolderInfo, Fresh, Notice, Plan, plan};
 use crate::render::{Shell, quote};
@@ -33,6 +34,8 @@ pub struct Ctx {
     pub shell: Option<Shell>,
     /// Whether foldl may ask the user questions.
     pub prompt: bool,
+    /// Whether to start and stop the session holder; off inside the holder.
+    pub holders: bool,
 }
 
 /// An interactive migration waiting for its result (milestone M3).
@@ -93,6 +96,8 @@ pub struct Ran {
     pub millis: u64,
     /// Things the user should know even when the run succeeded.
     pub warnings: Vec<String>,
+    /// Local time it ended, `HH:MM`, for dirty-lease messages.
+    pub at: String,
 }
 
 /// The end of a run.
@@ -123,7 +128,46 @@ pub enum Effect {
     Run(Box<Run>),
     /// Delete a saved copy. No answer.
     Remove(PathBuf),
+    /// Leases, holders, ports and questions: what `shared` handles.
+    Shared(Shared),
     Finish(Box<Finish>),
+}
+
+/// Effects of shared migrations and session holders.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shared {
+    /// Take the lease's mutex, waiting for it. Answered by `Done`.
+    Lock(LeaseRef),
+    /// Read the lease's state and holders; with `exclusive`, first try
+    /// `LOCK_EX | LOCK_NB` on a fresh `lease.lock`. Answered by `Inspected`.
+    Inspect { lease: LeaseRef, exclusive: bool },
+    /// Write the lease's state, hand a shared lock to a new lease holder
+    /// for `hold` (a parent PID), then release the mutex. Answered by
+    /// `Committed`.
+    Commit {
+        lease: LeaseRef,
+        state: LeaseState,
+        hold: Option<u32>,
+    },
+    /// Stop a holder and wait for it to exit. Answered by `Done`.
+    Release(u32),
+    /// Allocate free ports for a lease's migration. Answered by `Ports`.
+    AllocPorts {
+        lease: LeaseRef,
+        name: String,
+        names: Vec<String>,
+    },
+    /// Return a migration's ports to the registry. No answer.
+    FreePorts { lease: LeaseRef, name: String },
+    /// Ask the user; answered by `Answer` with one of `choices`.
+    Ask {
+        question: String,
+        choices: Vec<char>,
+    },
+    /// Start the session holder for `parent`. Answered by `Held`.
+    SpawnHolder { parent: u32 },
+    /// Stop the session holder. No answer.
+    StopHolder(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +176,17 @@ pub enum Event {
     /// An effect failed; the message says what and where.
     Io(String),
     Ran(Ran),
+    Inspected {
+        exclusive: bool,
+        state: LeaseState,
+        holders: Vec<Holder>,
+    },
+    Committed {
+        holder: Option<u32>,
+    },
+    Ports(BTreeMap<String, u16>),
+    Answer(char),
+    Held(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +202,8 @@ enum Wait {
     Prepared(Box<Fresh>),
     UpRan(Box<Fresh>, Env),
     DownRan(Box<Loaded>),
+    Shared(Box<shared::Wait>),
+    HolderSpawned,
 }
 
 /// One run's accumulated value.
@@ -246,19 +303,27 @@ fn fold(m: Machine, event: Event) -> (Machine, Vec<Effect>) {
         (Wait::UpRan(fresh, before), Event::Ran(ran)) => up_ran(m, *fresh, before, ran),
         (Wait::DownRan(loaded), Event::Ran(ran)) => then(
             down_warning(&loaded.name, &ran).into_iter().collect(),
-            finish_down(m, *loaded),
+            finish_down(m, *loaded, None),
         ),
-        (wait, event) => {
-            let message =
-                format!("internal error: unexpected {event:?} while waiting for {wait:?}");
-            m.code = m.code.worst(Code::Internal);
-            m.queue.clear();
-            then(
-                vec![Effect::Print(format!("foldl ✗ {message}\n"))],
-                advance(m),
-            )
+        (Wait::Shared(wait), event) => shared::fold(m, *wait, event),
+        (Wait::HolderSpawned, Event::Held(pid)) => {
+            m.session.holder = Some(pid);
+            finish(m)
         }
+        (wait, event) => unexpected(m, &wait, &event),
     }
+}
+
+/// An event the machine wasn't waiting for: a bug. Stop planning more.
+fn unexpected(m: Machine, wait: &dyn std::fmt::Debug, event: &Event) -> (Machine, Vec<Effect>) {
+    let mut m = m;
+    let message = format!("internal error: unexpected {event:?} while waiting for {wait:?}");
+    m.code = m.code.worst(Code::Internal);
+    m.queue.clear();
+    then(
+        vec![Effect::Print(format!("foldl ✗ {message}\n"))],
+        advance(m),
+    )
 }
 
 /// Starts the next op, or finishes.
@@ -267,7 +332,25 @@ fn advance(m: Machine) -> (Machine, Vec<Effect>) {
     match m.queue.pop_front() {
         Some(Op::Down) => start_down(m),
         Some(Op::Up(fresh)) => start_up(m, *fresh),
-        None => finish(m),
+        None => manage_holder(m),
+    }
+}
+
+/// A session with custom downs or leases gets a holder that tears them
+/// down if the parent dies; one without them doesn't need it.
+fn manage_holder(m: Machine) -> (Machine, Vec<Effect>) {
+    let mut m = m;
+    match (m.ctx.holders, m.session.needs_holder(), m.session.holder) {
+        (true, true, None) => {
+            m.wait = Wait::HolderSpawned;
+            let parent = m.session.parent;
+            (m, vec![Effect::Shared(Shared::SpawnHolder { parent })])
+        }
+        (true, false, Some(pid)) => {
+            m.session.holder = None;
+            then(vec![Effect::Shared(Shared::StopHolder(pid))], finish(m))
+        }
+        _ => finish(m),
     }
 }
 
@@ -305,6 +388,9 @@ fn dirs(m: &Machine, root: &Path, name: &str) -> (PathBuf, PathBuf, PathBuf) {
 }
 
 fn start_up(m: Machine, fresh: Fresh) -> (Machine, Vec<Effect>) {
+    if let Some(lease) = fresh.lease.clone() {
+        return shared::start_up(m, fresh, lease);
+    }
     let mut m = m;
     let (saved, state_dir, log) = dirs(&m, &fresh.root, &fresh.migration.name);
     let from = fresh.root.join(".foldl").join(&fresh.migration.dir);
@@ -508,13 +594,18 @@ fn complete_up(
     advance(m)
 }
 
-fn up_item(name: &str, diff: &EnvDiff, millis: u64, verbosity: Verbosity) -> String {
-    let vars = match (diff.len(), verbosity) {
+/// `+3 vars`, or the names with `-v`.
+fn vars_detail(diff: &EnvDiff, verbosity: Verbosity) -> Option<String> {
+    match (diff.len(), verbosity) {
         (0, _) => None,
         (_, Verbosity::Verbose) => Some(diff.summary()),
         (1, _) => Some("+1 var".to_string()),
         (n, _) => Some(format!("+{n} vars")),
-    };
+    }
+}
+
+fn up_item(name: &str, diff: &EnvDiff, millis: u64, verbosity: Verbosity) -> String {
+    let vars = vars_detail(diff, verbosity);
     let time = (millis >= 100).then(|| format!("{:.1}s", millis as f64 / 1000.0));
     let details: Vec<String> = vars.into_iter().chain(time).collect();
     match details.as_slice() {
@@ -564,6 +655,9 @@ fn start_down(m: Machine) -> (Machine, Vec<Effect>) {
     let Some(loaded) = m.session.loaded.pop() else {
         return advance(m);
     };
+    if let Some(lease) = loaded.lease.clone() {
+        return shared::start_down(m, loaded, lease);
+    }
     match &loaded.down {
         Some(script) => {
             let run = Run {
@@ -581,7 +675,7 @@ fn start_down(m: Machine) -> (Machine, Vec<Effect>) {
             m.wait = Wait::DownRan(Box::new(loaded));
             (m, vec![Effect::Run(Box::new(run))])
         }
-        None => finish_down(m, loaded),
+        None => finish_down(m, loaded, None),
     }
 }
 
@@ -602,7 +696,9 @@ fn down_warning(name: &str, ran: &Ran) -> Option<Effect> {
     )))
 }
 
-fn finish_down(m: Machine, loaded: Loaded) -> (Machine, Vec<Effect>) {
+/// Applies the derived down. `detail` adds to the summary, such as
+/// "kept: in use by ...".
+fn finish_down(m: Machine, loaded: Loaded, detail: Option<String>) -> (Machine, Vec<Effect>) {
     let mut m = m;
     m.env = loaded.diff.invert().apply(std::mem::take(&mut m.env));
     let unalias: String = loaded
@@ -621,9 +717,17 @@ fn finish_down(m: Machine, loaded: Loaded) -> (Machine, Vec<Effect>) {
             m.rolled_back.push(loaded.name.clone());
         }
         (true, None) => m.rolled_back.push(loaded.name.clone()),
-        (false, _) => m.downs.push(loaded.name.clone()),
+        (false, _) => m.downs.push(match detail {
+            Some(detail) => format!("{} {detail}", loaded.name),
+            None => loaded.name.clone(),
+        }),
     }
-    then(vec![Effect::Remove(loaded.saved)], advance(m))
+    // A shared migration's saved copy belongs to its lease.
+    let remove = loaded
+        .lease
+        .is_none()
+        .then_some(Effect::Remove(loaded.saved));
+    then(remove.into_iter().collect(), advance(m))
 }
 
 fn notice_code(notice: &Notice) -> Code {
@@ -681,6 +785,8 @@ fn notice_text(notice: &Notice, home: &str) -> String {
         }
     }
 }
+
+mod shared;
 
 #[cfg(test)]
 mod tests;

@@ -71,6 +71,7 @@ fn load(
         config,
         shell: None,
         prompt: false,
+        holders: true,
     };
     let existing = sys
         .var("FOLDL_SESSION")
@@ -101,10 +102,8 @@ fn load(
         ),
     };
     let runner = Runner::new(sys.exe.clone(), paths.session(&session.id)).ctx("signals")?;
-    let (finish, _) = drive(
-        &mut RealWorld { runner: &runner },
-        start(session, ctx.clone(), env, &infos),
-    );
+    let mut world = RealWorld::new(&runner, sys, &session, &ctx.config);
+    let (finish, _) = drive(&mut world, start(session, ctx.clone(), env, &infos));
     let loaded = Loaded {
         finish,
         ctx,
@@ -132,8 +131,9 @@ fn unload(sys: &Sys, loaded: Loaded) -> Result<(), Failure> {
         return session::save(&paths, &finish.session).ctx("saving session");
     }
     let runner = Runner::new(sys.exe.clone(), paths.session(&finish.session.id)).ctx("signals")?;
+    let mut world = RealWorld::new(&runner, sys, &finish.session, &ctx.config);
     let (_, _) = drive(
-        &mut RealWorld { runner: &runner },
+        &mut world,
         start(finish.session.clone(), ctx, finish.env, &[]),
     );
     session::remove(&paths, &finish.session.id);

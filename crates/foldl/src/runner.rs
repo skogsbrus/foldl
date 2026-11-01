@@ -75,6 +75,7 @@ impl Runner {
         };
         ran.tail = fsx::tail(&run.log, 10);
         ran.millis = started.elapsed().as_millis() as u64;
+        ran.at = clock();
         ran
     }
 
@@ -137,6 +138,7 @@ impl Runner {
             tail: vec![],
             millis: 0,
             warnings: warnings.into_iter().collect(),
+            at: String::new(),
         }
     }
 
@@ -214,7 +216,23 @@ fn unavailable(what: &str) -> Ran {
         tail: vec![],
         millis: 0,
         warnings: vec![],
+        at: String::new(),
     }
+}
+
+/// The local time as `HH:MM`.
+pub fn clock() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as libc::time_t;
+    // SAFETY: localtime_r only writes the `tm` we own.
+    let tm = unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm
+    };
+    format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
 }
 
 /// Looks a program up on a `PATH` value.

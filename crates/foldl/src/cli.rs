@@ -115,9 +115,36 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Internal: a holder process for a lease or a session.
+    #[command(hide = true)]
+    Hold {
+        #[command(subcommand)]
+        what: Hold,
+    },
     /// Internal: write the environment to a file, for script runs.
     #[command(name = "__dump-env", hide = true)]
     DumpEnv { file: PathBuf },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Hold {
+    /// Keep the inherited lock until the parent exits.
+    Lease {
+        #[arg(long)]
+        parent: u32,
+        /// The inherited descriptor holding the lock (kept open).
+        #[arg(long)]
+        fd: i32,
+        #[arg(long)]
+        sidecar: PathBuf,
+    },
+    /// Tear the session down if the parent exits without leaving.
+    Session {
+        #[arg(long)]
+        parent: u32,
+        #[arg(long)]
+        session: String,
+    },
 }
 
 /// Parses `args` and runs the command; returns the exit code.
@@ -197,6 +224,17 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
         Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
+        Command::Hold {
+            what: Hold::Lease {
+                parent, sidecar, ..
+            },
+        } => {
+            crate::hold::hold_lease(parent, &sidecar).ctx("holding the lease")?;
+            Ok(0)
+        }
+        Command::Hold {
+            what: Hold::Session { parent, session },
+        } => crate::hold::hold_session(sys, parent, &session),
         Command::DumpEnv { file } => {
             crate::runner::dump_env(&file).ctx("writing environment")?;
             Ok(0)

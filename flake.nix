@@ -67,6 +67,8 @@
             pkgs.zsh
             pkgs.git
             pkgs.coreutils
+            # Holders describe their sessions with ps.
+            pkgs.unixtools.ps
           ]
           # script(1) for terminal tests; macOS uses its own /usr/bin/script.
           ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.util-linux;
@@ -157,7 +159,10 @@
             // {
               inherit cargoArtifacts;
               nativeBuildInputs = s.testTools;
-              cargoLlvmCovExtraArgs = "--workspace --fail-under-lines 100 --show-missing-lines --lcov --output-path $out";
+              # The text table names any uncovered lines; the lcov file is the
+              # output.
+              cargoLlvmCovExtraArgs = "--workspace --fail-under-lines 100 --show-missing-lines";
+              postInstall = "cargo llvm-cov report --release --lcov --output-path $out";
             }
           );
         }

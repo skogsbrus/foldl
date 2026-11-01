@@ -26,6 +26,7 @@ fn ok(effect: &Effect) -> Option<Event> {
                 tail: vec![],
                 millis: 1,
                 warnings: vec![],
+                at: String::new(),
             }))
         }
         _ => None,
@@ -40,6 +41,7 @@ fn failing(name: &'static str, outcome: Outcome) -> impl FnMut(&Effect) -> Optio
             tail: vec!["boom".into()],
             millis: 1,
             warnings: vec!["old bash".into()],
+            at: String::new(),
         })),
         other => ok(other),
     }
@@ -296,6 +298,7 @@ fn unexpected_events_are_internal_errors() {
             tail: vec![],
             millis: 0,
             warnings: vec![],
+            at: String::new(),
         }),
     );
     assert!(matches!(&effects[0], Effect::Print(t) if t.contains("internal error")));
@@ -469,6 +472,7 @@ fn ports_are_exported_and_interpolated() {
         root: "/r".into(),
         migration: folder.migrations[0].clone(),
         watch: Default::default(),
+        lease: None,
     };
     let ports = [("PGPORT".to_string(), "20001".to_string())].into();
     let e = prepared_env(&env(&[]), &fresh, Path::new("/state"), &ports);

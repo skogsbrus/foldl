@@ -186,3 +186,103 @@ impl Fixture {
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 }
+
+impl Fixture {
+    /// The calls migrations appended to `$HOME/calls`.
+    pub fn calls(&self) -> String {
+        std::fs::read_to_string(self.home.join("calls")).unwrap_or_default()
+    }
+
+    /// Waits until no holder of this fixture is running, so their effects
+    /// (and coverage data) are complete. Reads foldl's own state: session
+    /// holders from `state.json`, lease holders from their sidecars.
+    pub fn settle(&self) {
+        let state = self.home.join(".local/state/foldl");
+        let pids = |pattern: &str, key: &str| -> Vec<String> {
+            let files = glob(&state.join(pattern));
+            files
+                .iter()
+                .filter_map(|f| std::fs::read_to_string(f).ok())
+                .filter_map(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                .filter_map(|v| v.get(key).and_then(|p| p.as_u64()).map(|p| p.to_string()))
+                .collect()
+        };
+        for _ in 0..400 {
+            let all = [
+                pids("sessions/*/state.json", "holder"),
+                pids("leases/*/holders/*.json", "holder_pid"),
+            ]
+            .concat();
+            let alive = all.iter().any(|pid| alive(pid));
+            if !alive {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("holders still running for {}", state.display());
+    }
+
+    /// Starts `script` in a shell in the background.
+    pub fn spawn_shell(&self, shell: &TestShell, script: &str) -> std::process::Child {
+        let setup = format!("eval \"$('{}' hook {})\"\n", foldl().display(), shell.kind);
+        let mut cmd = std::process::Command::new(&shell.program);
+        cmd.arg("-c")
+            .arg(setup + script)
+            .current_dir(&self.home)
+            .env_clear();
+        cmd.env("HOME", &self.home)
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+        if let Some(value) = std::env::var_os("LLVM_PROFILE_FILE") {
+            cmd.env("LLVM_PROFILE_FILE", value);
+        }
+        cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+}
+
+/// `kill -0`, through the shell builtin.
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("sh")
+        .args(["-c", &format!("kill -0 {pid} 2>/dev/null")])
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Paths matching `*` segments, without a glob crate.
+fn glob(pattern: &std::path::Path) -> Vec<PathBuf> {
+    let parts: Vec<String> = pattern
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    parts
+        .iter()
+        .skip(1)
+        .fold(vec![PathBuf::from(&parts[0])], |found, part| {
+            found
+                .into_iter()
+                .flat_map(|dir| match part.as_str() {
+                    "*" => std::fs::read_dir(&dir)
+                        .into_iter()
+                        .flatten()
+                        .flatten()
+                        .map(|e| e.path())
+                        .collect(),
+                    p if p.starts_with("*.") => {
+                        let ext = &p[2..];
+                        std::fs::read_dir(&dir)
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .map(|e| e.path())
+                            .filter(|e| e.extension().is_some_and(|x| x == ext))
+                            .collect()
+                    }
+                    p => vec![dir.join(p)],
+                })
+                .filter(|p| p.exists())
+                .collect()
+        })
+}

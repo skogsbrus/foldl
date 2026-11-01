@@ -33,6 +33,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path)
 }
 
+/// Writes a value as pretty JSON, atomically.
+pub fn write_json(path: &Path, value: &impl serde::Serialize) -> io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    write_atomic(path, &bytes)
+}
+
 /// Opens a file for writing from scratch, mode 0600.
 pub fn create_private(path: &Path) -> io::Result<fs::File> {
     ensure_dir(path.parent().unwrap_or(Path::new("/")))?;
