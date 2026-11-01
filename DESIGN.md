@@ -1045,6 +1045,24 @@ corrected here.
 - **2026-11-01 · Lease I/O errors.** Decision: if a lease file can't be
   read or written, an up fails like any other (its folder rolls back); a
   down still applies the derived down, reported as "(lease error)".
+- **2026-11-01 · The `.env` dialect.** Q: unspecified. Decision: `NAME=value`
+  with an optional `export ` prefix, `#` comments (whole lines, or after
+  whitespace in unquoted values), single quotes literal, double quotes with
+  `\n`, `\t`, `\"`, `\\`, `\$` and spanning lines, and `$NAME`/`${NAME}`
+  expansion from the environment and earlier lines in unquoted and
+  double-quoted values. A missing file fails the up unless `required =
+  false`; errors name the line.
+- **2026-11-01 · `nix-flake` details.** Decisions: the cache key hashes
+  `flake.nix`, `flake.lock` and the migration's watched files (not the
+  path, so worktrees share entries); a non-path reference such as
+  `github:o/r` is keyed on its text. Evaluation runs `nix print-dev-env
+  --json --profile <cache>/<key>/profile`, the profile being the GC root.
+  Only exported variables apply; `PATH` and `XDG_DATA_DIRS` are prepended
+  to the session's values, and variables describing the build sandbox
+  (`HOME`, `TMPDIR`, `NIX_BUILD_TOP`, `SHELL`, ...) are skipped. The last
+  good key is remembered per folder; on a failed evaluation foldl uses it
+  and warns. `nix` must be on `PATH` even when the cache would do, so a
+  folder behaves the same on a machine without Nix.
 
 ## Prior art
 
