@@ -65,6 +65,24 @@ pub enum Command {
     Ignore { dir: Option<PathBuf> },
     /// Validate the folder's manifests.
     Check { dir: Option<PathBuf> },
+    /// Load the folder, run a command in it, unload.
+    Exec {
+        /// Folder to run in (default: the current one).
+        dir: Option<PathBuf>,
+        /// Print errors as JSON.
+        #[arg(long)]
+        json: bool,
+        #[arg(last = true, required = true)]
+        cmd: Vec<OsString>,
+    },
+    /// Print the folder's environment.
+    Export {
+        format: crate::oneshot::Format,
+        dir: Option<PathBuf>,
+        /// Print errors as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Internal: write the environment to a file, for script runs.
     #[command(name = "__dump-env", hide = true)]
     DumpEnv { file: PathBuf },
@@ -83,10 +101,17 @@ pub fn run(args: Vec<OsString>, sys: Sys) -> i32 {
             return code;
         }
     };
+    let json = matches!(
+        cli.command,
+        Command::Exec { json: true, .. } | Command::Export { json: true, .. }
+    );
     match dispatch(cli, &sys) {
         Ok(code) => code,
         Err(failure) => {
-            eprint!("{}", failure.human());
+            match json {
+                true => println!("{}", failure.json()),
+                false => eprint!("{}", failure.human()),
+            }
             failure.code.exit()
         }
     }
@@ -110,6 +135,8 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Deny { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Denied),
         Command::Ignore { dir } => trust_cmd::mark(sys, dir, crate::trust::TrustState::Ignored),
         Command::Check { dir } => trust_cmd::check(sys, dir),
+        Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
+        Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
         Command::DumpEnv { file } => {
             crate::runner::dump_env(&file).ctx("writing environment")?;
             Ok(0)

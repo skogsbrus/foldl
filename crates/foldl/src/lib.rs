@@ -10,6 +10,7 @@ pub mod fsx;
 pub mod gather;
 pub mod hook;
 pub mod interp;
+pub mod oneshot;
 pub mod runner;
 pub mod session;
 pub mod settings;
