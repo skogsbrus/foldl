@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# Commits staged changes only if `nix flake check` passes. The message is
-# read from stdin.
+# Commits what is staged, only if `nix flake check` passes on exactly the
+# staged tree: unstaged and untracked changes are stashed meanwhile. The
+# message is read from stdin.
 set -euo pipefail
-git add -A
+msg=$(cat)
 git diff --cached --shortstat
-if ! nix flake check 2>/tmp/foldl-check.log; then
-  grep -E "error|FAILED|panicked|Uncovered|: [0-9]" /tmp/foldl-check.log | tail -30
+stashed=0
+if [ -n "$(git status --porcelain --untracked-files=all | grep -v '^[MADR] ' || true)" ]; then
+  git stash push -q --keep-index --include-untracked
+  stashed=1
+fi
+restore() { if [ "$stashed" = 1 ]; then git checkout -q -- . && git stash pop -q; fi; }
+trap restore EXIT
+if ! nix flake check 2>"${TMPDIR:-/tmp}/foldl-check.log"; then
+  grep -E "error|FAILED|panicked|Uncovered|\.rs: [0-9]" "${TMPDIR:-/tmp}/foldl-check.log" | tail -30
   echo "flake check failed; not committing" >&2
   exit 1
 fi
-git commit -q -F - "$@"
+git commit -q -m "$msg"
 git log --oneline -1
