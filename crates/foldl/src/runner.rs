@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use foldl_core::env::{Env, Value};
+use foldl_core::folder::Builtin;
 use foldl_core::folder::ScriptShell;
 use foldl_core::machine::{Direction, Exec, Outcome, Ran, Run};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -42,6 +43,8 @@ pub struct Runner {
     scratch: PathBuf,
     interrupted: Arc<AtomicBool>,
     wake: UnixStream,
+    /// `$XDG_CACHE_HOME/foldl`, for built-ins' caches.
+    cache: PathBuf,
 }
 
 impl Runner {
@@ -52,12 +55,19 @@ impl Runner {
         signal_hook::flag::register(signal_hook::consts::SIGINT, interrupted.clone())?;
         signal_hook::low_level::pipe::register(signal_hook::consts::SIGINT, ring.try_clone()?)?;
         signal_hook::low_level::pipe::register(signal_hook::consts::SIGCHLD, ring)?;
+        let cache = scratch.join("cache");
         Ok(Runner {
             exe,
             scratch,
             interrupted,
             wake,
+            cache,
         })
+    }
+
+    /// Uses `cache` (`$XDG_CACHE_HOME/foldl`) for built-ins' caches.
+    pub fn with_cache(self, cache: PathBuf) -> Runner {
+        Runner { cache, ..self }
     }
 
     /// Marks the next wait as interrupted, as Ctrl-C would.
@@ -71,7 +81,7 @@ impl Runner {
             Exec::Script { shebang, path } => {
                 self.script(run, &shebang.program, shebang.shell, path)
             }
-            Exec::Builtin(_) => unavailable("built-ins are not supported yet"),
+            Exec::Builtin { builtin, watch } => self.builtin(builtin, watch, run),
         };
         ran.tail = fsx::tail(&run.log, 10);
         ran.millis = started.elapsed().as_millis() as u64;
@@ -142,9 +152,35 @@ impl Runner {
         }
     }
 
+    fn builtin(&self, builtin: &Builtin, watch: &foldl_core::folder::Hash, run: &Run) -> Ran {
+        let log = fsx::create_private(&run.log);
+        let Ok(mut log) = log else {
+            return unavailable(&format!("can't write {}", run.log.display()));
+        };
+        let (outcome, warnings) = match builtin {
+            Builtin::Dotenv { file, required } => (
+                crate::builtins::dotenv(file, *required, run, &mut log),
+                vec![],
+            ),
+            Builtin::NixFlake { flake } => {
+                let cache = crate::nix::Cache {
+                    dir: self.cache.join("nix"),
+                };
+                crate::builtins::nix_flake(self, &cache, flake, watch, run, &mut log)
+            }
+        };
+        Ran {
+            outcome,
+            tail: vec![],
+            millis: 0,
+            warnings,
+            at: String::new(),
+        }
+    }
+
     /// Waits for the child, forwarding Ctrl-C to its process group and
     /// enforcing the timeout.
-    fn wait(&self, mut child: Child, run: &Run) -> Outcome {
+    pub(crate) fn wait(&self, mut child: Child, run: &Run) -> Outcome {
         let group = Pid::from_child(&child);
         let started = Instant::now();
         let mut deadline = started + run.timeout;

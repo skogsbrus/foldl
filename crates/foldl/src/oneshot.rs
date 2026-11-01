@@ -101,7 +101,9 @@ fn load(
             true,
         ),
     };
-    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id)).ctx("signals")?;
+    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id))
+        .ctx("signals")?
+        .with_cache(paths.cache.clone());
     let mut world = RealWorld::new(&runner, sys, &session, &ctx.config);
     let (finish, _) = drive(&mut world, start(session, ctx.clone(), env, &infos));
     let loaded = Loaded {
@@ -130,7 +132,9 @@ fn unload(sys: &Sys, loaded: Loaded) -> Result<(), Failure> {
     if !ephemeral {
         return session::save(&paths, &finish.session).ctx("saving session");
     }
-    let runner = Runner::new(sys.exe.clone(), paths.session(&finish.session.id)).ctx("signals")?;
+    let runner = Runner::new(sys.exe.clone(), paths.session(&finish.session.id))
+        .ctx("signals")?
+        .with_cache(paths.cache.clone());
     let mut world = RealWorld::new(&runner, sys, &finish.session, &ctx.config);
     let (_, _) = drive(
         &mut world,

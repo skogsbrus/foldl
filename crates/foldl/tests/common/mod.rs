@@ -286,3 +286,12 @@ fn glob(pattern: &std::path::Path) -> Vec<PathBuf> {
                 .collect()
         })
 }
+
+/// `PATH` without directories that contain `program`.
+pub fn path_without(program: &str) -> String {
+    let path = std::env::var("PATH").unwrap_or_default();
+    path.split(':')
+        .filter(|dir| !std::path::Path::new(dir).join(program).exists())
+        .collect::<Vec<_>>()
+        .join(":")
+}

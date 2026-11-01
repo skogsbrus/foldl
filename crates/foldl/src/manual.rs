@@ -129,7 +129,9 @@ pub fn force_down(sys: &Sys, name: &str) -> Result<i32, Failure> {
         prompt: false,
         holders: false,
     };
-    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id)).ctx("signals")?;
+    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id))
+        .ctx("signals")?
+        .with_cache(paths.cache.clone());
     let mut world = RealWorld::new(&runner, sys, &session, &config);
     let id = session.id.clone();
     let (finish, _) = drive(

@@ -189,16 +189,22 @@ fn missing_programs_are_unavailable() {
     let ran = bench.runner.run(&Run {
         name: "b".into(),
         direction: Direction::Up,
-        exec: Exec::Builtin(Builtin::Dotenv {
-            file: ".env".into(),
-            required: true,
-        }),
+        exec: Exec::Builtin {
+            builtin: Builtin::Dotenv {
+                file: ".env".into(),
+                required: true,
+            },
+            watch: Default::default(),
+        },
         env: Env::new(),
         cwd: "/".into(),
         timeout: Duration::from_secs(1),
-        log: bench.dir.path().join("b.log"),
+        log: "/dev/null/b.log".into(),
     });
-    assert!(matches!(ran.outcome, Outcome::Unavailable(_)));
+    assert!(
+        matches!(ran.outcome, Outcome::Unavailable(ref m) if m.starts_with("can't write")),
+        "{ran:?}"
+    );
 }
 
 #[test]

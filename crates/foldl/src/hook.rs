@@ -88,7 +88,9 @@ pub fn hook_step(
         prompt,
         holders: true,
     };
-    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id)).ctx("signals")?;
+    let runner = Runner::new(sys.exe.clone(), paths.session(&session.id))
+        .ctx("signals")?
+        .with_cache(paths.cache.clone());
     let mut world = RealWorld::new(&runner, sys, &session, &ctx.config);
     let (finish, events) = drive(&mut world, start(session, ctx, env, &infos));
     let mut session = finish.session;

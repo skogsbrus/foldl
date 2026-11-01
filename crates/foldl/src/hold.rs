@@ -231,7 +231,9 @@ pub fn hold_session(
         prompt: false,
         holders: false,
     };
-    let runner = crate::runner::Runner::new(sys.exe.clone(), paths.session(id)).ctx("signals")?;
+    let runner = crate::runner::Runner::new(sys.exe.clone(), paths.session(id))
+        .ctx("signals")?
+        .with_cache(paths.cache.clone());
     let mut world = crate::interp::RealWorld::new(&runner, sys, &session, &config);
     let env = foldl_core::env::tracked(sys.env());
     let start = foldl_core::machine::start(session, ctx, env, &[]);

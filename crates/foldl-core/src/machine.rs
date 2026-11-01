@@ -54,11 +54,13 @@ pub enum Direction {
 pub enum Exec {
     /// Source `path` in the shell its shebang names, then capture the
     /// environment.
-    Script {
-        shebang: Shebang,
-        path: PathBuf,
+    Script { shebang: Shebang, path: PathBuf },
+    /// A built-in, with the hash of the migration's watched files (part of
+    /// a cache key).
+    Builtin {
+        builtin: Builtin,
+        watch: crate::folder::Hash,
     },
-    Builtin(Builtin),
 }
 
 /// A script or built-in to run in a subprocess.
@@ -477,7 +479,10 @@ fn run_up(m: Machine, fresh: Fresh) -> (Machine, Vec<Effect>) {
     let prepared = prepared_env(&m.env, &fresh, &state_dir, &BTreeMap::new());
     let migration = &fresh.migration;
     let exec = match (&migration.builtin, &migration.up) {
-        (Some(builtin), _) => Exec::Builtin(builtin.clone()),
+        (Some(builtin), _) => Exec::Builtin {
+            builtin: builtin.clone(),
+            watch: fresh.watch.clone(),
+        },
         (None, Some(script)) => Exec::Script {
             shebang: script.shebang.clone(),
             path: saved.join(&script.path),

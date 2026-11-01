@@ -557,7 +557,10 @@ fn run_up(
     let prepared = prepared_env(&m.env, &fresh, &state_dir, &texts);
     let migration = &fresh.migration;
     let exec = match (&migration.builtin, &migration.up) {
-        (Some(builtin), _) => Exec::Builtin(builtin.clone()),
+        (Some(builtin), _) => Exec::Builtin {
+            builtin: builtin.clone(),
+            watch: fresh.watch.clone(),
+        },
         (None, Some(script)) => Exec::Script {
             shebang: script.shebang.clone(),
             path: saved.join(&script.path),
