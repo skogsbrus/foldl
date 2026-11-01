@@ -7,6 +7,7 @@
 pub mod cli;
 pub mod disk;
 pub mod fsx;
+pub mod interp;
 pub mod runner;
 pub mod session;
 pub mod sys;
