@@ -1,0 +1,5 @@
+# The development shell: Rust toolchain, cargo-llvm-cov, the pinned test
+# shells (FOLDL_TEST_*) and tmux, from flake.nix. Replaces `nix develop`.
+version = 1
+builtin = "nix-flake"
+watch = ["flake.nix", "flake.lock", "rust-toolchain.toml"]

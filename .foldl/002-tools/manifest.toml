@@ -1,0 +1,8 @@
+# Repository scripts on PATH, and short aliases for the gates.
+version = 1
+interactive = true
+path_add = ["scripts"]
+
+[aliases]
+check = "nix flake check"
+cov = "cargo llvm-cov --workspace"

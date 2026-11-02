@@ -1,0 +1,5 @@
+version = 1
+
+# Worktrees and agent clones of this repository load without `foldl allow`.
+[trust]
+reuse = "repo"
