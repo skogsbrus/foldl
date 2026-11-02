@@ -58,7 +58,8 @@ mod platform {
 
     pub fn wait(parent: u32, wake: &UnixStream) -> std::io::Result<Woke> {
         let kq = kqueue()?;
-        let Some(pid) = Pid::from_raw(parent as i32) else {
+        // PID 1 adopts orphans: a parent of 1 is already gone.
+        let Some(pid) = Pid::from_raw(parent as i32).filter(|_| parent > 1) else {
             return Ok(Woke::ParentExited);
         };
         let exit = Event::new(
@@ -103,7 +104,8 @@ mod platform {
     use rustix::process::{PidfdFlags, pidfd_open};
 
     pub fn wait(parent: u32, wake: &UnixStream) -> std::io::Result<Woke> {
-        let Some(pid) = Pid::from_raw(parent as i32) else {
+        // PID 1 adopts orphans: a parent of 1 is already gone.
+        let Some(pid) = Pid::from_raw(parent as i32).filter(|_| parent > 1) else {
             return Ok(Woke::ParentExited);
         };
         let pidfd = match pidfd_open(pid, PidfdFlags::empty()) {
@@ -249,6 +251,11 @@ mod tests {
     #[test]
     fn parents_that_are_gone() {
         assert_eq!(wait(0).unwrap(), Woke::ParentExited);
+        assert_eq!(
+            wait(1).unwrap(),
+            Woke::ParentExited,
+            "orphaned: launchd/init adopted it"
+        );
         assert_eq!(wait(999_999_999).unwrap(), Woke::ParentExited);
         stop(0);
         assert_eq!(log_path(Path::new("/s")), PathBuf::from("/s/holder.log"));
