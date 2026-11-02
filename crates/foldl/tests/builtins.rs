@@ -10,7 +10,8 @@ use common::{Fixture, path_without};
 
 const FAKE_NIX: &str = r#"#!/bin/sh
 echo "$*" >> "$HOME/nixcalls"
-case "$(cat "$5/flake.nix" 2>/dev/null)" in *broken*) echo "error: broken flake" >&2; exit 1;; *garbage*) echo nope; exit 0;; esac
+for ref; do :; done
+case "$(cat "$ref/flake.nix" 2>/dev/null)" in *broken*) echo "error: broken flake" >&2; exit 1;; *garbage*) echo nope; exit 0;; esac
 printf '{"variables":{"DEV":{"type":"exported","value":"yes"},"PATH":{"type":"exported","value":"/nix/dev/bin"},"HOME":{"type":"exported","value":"/homeless"}}}'
 "#;
 

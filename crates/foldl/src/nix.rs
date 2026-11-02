@@ -92,12 +92,19 @@ impl Cache {
     }
 }
 
-/// `nix print-dev-env --json --profile <entry>/profile <ref>`.
+/// `nix print-dev-env --json --profile <entry>/profile <ref>`, enabling
+/// flakes for this call so it works whatever the user's nix.conf says.
 pub fn command(nix: &Path, flake_ref: &str, entry: &Path) -> Command {
     let mut cmd = Command::new(nix);
-    cmd.args(["print-dev-env", "--json", "--profile"])
-        .arg(entry.join("profile"))
-        .arg(flake_ref);
+    cmd.args([
+        "--extra-experimental-features",
+        "nix-command flakes",
+        "print-dev-env",
+        "--json",
+        "--profile",
+    ])
+    .arg(entry.join("profile"))
+    .arg(flake_ref);
     cmd
 }
 
@@ -196,7 +203,15 @@ mod tests {
         let args: Vec<_> = cmd.get_args().collect();
         assert_eq!(
             args,
-            ["print-dev-env", "--json", "--profile", "/e/profile", "ref"]
+            [
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "print-dev-env",
+                "--json",
+                "--profile",
+                "/e/profile",
+                "ref"
+            ]
         );
     }
 }
