@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs the test suite with no nix on PATH, against the system's shells
+# (macOS: /bin/bash 3.2 and /bin/zsh), to catch hidden Nix dependencies.
+# The test binaries are built in the dev shell first; running them needs
+# only the system.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+nix develop -c cargo test --workspace --no-run --message-format=json 2>/dev/null |
+  python3 -c '
+import json, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("reason") == "compiler-artifact" and m.get("profile", {}).get("test") and m.get("executable"):
+        print(m["executable"])
+' > target/test-binaries.txt
+clean_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -e '^/nix' -e '/\.nix-profile' -e '/run/current-system' -e '/etc/profiles' | paste -sd: -)
+command -v zsh >/dev/null || true
+status=0
+while read -r binary; do
+  crate_dir=$(case "$binary" in *foldl_core*) echo crates/foldl-core;; *) echo crates/foldl;; esac)
+  echo "== $(basename "$binary")"
+  (cd "$crate_dir" && env -i HOME="$HOME" PATH="$clean_path" TERM="${TERM:-xterm}" "$binary" -q) || status=1
+done < target/test-binaries.txt
+if PATH="$clean_path" command -v nix >/dev/null; then echo "nix still on PATH" >&2; status=1; fi
+exit $status

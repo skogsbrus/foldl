@@ -11,6 +11,15 @@ use common::{Fixture, path_without};
 
 const ENVRC: &str = "export DATABASE_URL=postgres://localhost/app\nPATH_add bin\ndotenv_if_exists\nwatch_file config.toml\nexport GREETING=\"$(echo hi)\"\n";
 
+/// Whether direnv is installed; tests that need it skip without it (the
+/// flake's checks always have it).
+fn has_direnv() -> bool {
+    std::process::Command::new("direnv")
+        .arg("version")
+        .output()
+        .is_ok()
+}
+
 fn direnv(f: &Fixture, args: &[&str]) -> std::process::Output {
     let mut cmd = std::process::Command::new("direnv");
     cmd.args(args);
@@ -23,6 +32,9 @@ fn read(f: &Fixture, rel: &str) -> String {
 
 #[test]
 fn imports_checks_parity_and_denies_direnv() {
+    if !has_direnv() {
+        return;
+    }
     let f = Fixture::new();
     f.write(".envrc", ENVRC);
     assert!(direnv(&f, &["allow"]).status.success());
@@ -58,6 +70,9 @@ fn imports_checks_parity_and_denies_direnv() {
 
 #[test]
 fn differences_and_unchecked_parity_are_reported() {
+    if !has_direnv() {
+        return;
+    }
     let f = Fixture::new();
     f.write(".envrc", "export HAS=\"$(type -t layout)\"\n");
     assert!(direnv(&f, &["allow"]).status.success());
@@ -121,6 +136,9 @@ fn dry_runs_shared_services_and_errors() {
 
 #[test]
 fn a_failing_import_is_reported_by_parity() {
+    if !has_direnv() {
+        return;
+    }
     let f = Fixture::new();
     f.write(".envrc", "false_command_that_does_not_exist_xyz\n");
     assert!(direnv(&f, &["allow"]).status.success());
