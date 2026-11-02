@@ -59,6 +59,8 @@
               ./Cargo.lock
               ./deny.toml
               ./crates
+              # The docs test checks the README covers every command.
+              ./README.md
             ];
           };
 
