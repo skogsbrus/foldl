@@ -1083,6 +1083,21 @@ corrected here.
   with a note in `foldl status`, like a shebang for the other shell.
   Limitation: in zsh the hook runs with `localoptions` (needed for
   `localtraps`), so `setopt` in an interactive `up.sh` doesn't outlive it.
+- **2026-11-01 · Agent sessions.** Decisions: `foldl session start [--id]
+  [--parent]` creates a session with no shell, owned by `--parent`
+  (default: the calling process), or reuses an existing one with that id;
+  it prints `export FOLDL_SESSION=...` (or JSON with `--json`). `session
+  stop` unloads everything and removes it. A parent of PID 1 counts as
+  gone (the owner was orphaned).
+- **2026-11-01 · Claude Code hooks.** Q: `CLAUDE_ENV_FILE` is appended to
+  and sourced in order by every Bash call, so writing the folder's whole
+  env would leave a previous folder's variables behind. Decision: the hook
+  (`foldl integrate claude --hook`, installed for `SessionStart` and
+  `CwdChanged`) appends the transition: `export`/`unset` lines from the
+  env before to the env after, with `export FOLDL_SESSION` first. The
+  session id is `claude-<session_id>`, owned by the nearest ancestor
+  process named `claude` (else the hook's parent), so leases last as long
+  as Claude Code runs. Verified with a real headless Claude Code session.
 
 ## Prior art
 
