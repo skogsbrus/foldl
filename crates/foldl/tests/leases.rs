@@ -306,6 +306,17 @@ fn a_holder_whose_parent_is_gone_exits_at_once() {
             .code,
         0
     );
+    let gone = f.run(&[
+        "hold",
+        "lease",
+        "--parent",
+        "999999999",
+        "--fd",
+        "9",
+        "--sidecar",
+        sidecar.to_str().unwrap(),
+    ]);
+    assert_eq!(gone.code, 0, "a parent that no longer exists: {gone:?}");
 }
 
 #[test]

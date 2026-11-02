@@ -263,6 +263,13 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_that_exits_wakes_the_holder() {
+        let mut parent = Command::new("sleep").arg("0.2").spawn().unwrap();
+        assert_eq!(wait(parent.id()).unwrap(), Woke::ParentExited);
+        parent.wait().unwrap();
+    }
+
+    #[test]
     fn spawning_and_holding() {
         let dir = tempfile::tempdir().unwrap();
         let sidecar = dir.path().join("holders/s.json");
