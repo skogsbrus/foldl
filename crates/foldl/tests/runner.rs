@@ -99,7 +99,7 @@ fn up_captures_the_environment_in_every_shell() {
         );
         assert!(!env.contains_key("KEEP"));
         assert_eq!(ran.tail, ["hello"]);
-        let old = shell.label == "bash3";
+        let old = shell.old_bash;
         assert_eq!(
             ran.warnings.len(),
             usize::from(old),

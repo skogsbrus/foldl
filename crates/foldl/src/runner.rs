@@ -261,11 +261,12 @@ pub fn clock() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as libc::time_t;
-    // SAFETY: localtime_r only writes the `tm` we own.
+        .as_secs() as i64;
+    // SAFETY: localtime_r only reads `now` (time_t is 64 bits on every
+    // supported target) and writes the `tm` we own.
     let tm = unsafe {
         let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
+        libc::localtime_r((&raw const now).cast(), &mut tm);
         tm
     };
     format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)

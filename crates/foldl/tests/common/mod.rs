@@ -14,6 +14,8 @@ pub struct TestShell {
     pub label: &'static str,
     pub program: PathBuf,
     pub kind: &'static str,
+    /// bash older than 4 (macOS's /bin/bash), which foldl warns about.
+    pub old_bash: bool,
 }
 
 /// The shells to test against: pinned through Nix when the flake sets
@@ -48,10 +50,19 @@ pub fn shells() -> Vec<TestShell> {
                 .arg("true")
                 .status()
                 .is_ok_and(|s| s.success());
+            let major = Command::new(&program)
+                .arg("-c")
+                .arg("echo ${BASH_VERSINFO[0]-}")
+                .output();
+            let major = major
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            let old_bash = kind == "bash" && major.parse::<u32>().is_ok_and(|m| m < 4);
             ok.then_some(TestShell {
                 label,
                 program,
                 kind,
+                old_bash,
             })
         })
         .collect();
