@@ -135,13 +135,19 @@ fn export_formats() {
 fn export_reuses_an_agent_session() {
     let f = Fixture::new();
     f.folder(".", SERVICE);
+    // A live owner: a parent of PID 1 means the agent is gone, and its
+    // holders would tear the session down at once.
+    let mut agent = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
     let dir = f.home.join(".local/state/foldl/sessions/agent-1");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("state.json"),
-        r#"{"version":1,"id":"agent-1","parent":1,"shell":null,"loaded":[]}"#,
-    )
-    .unwrap();
+    let state = format!(
+        r#"{{"version":1,"id":"agent-1","parent":{},"shell":null,"loaded":[]}}"#,
+        agent.id()
+    );
+    std::fs::write(dir.join("state.json"), state).unwrap();
     let out = f
         .cmd(&["export", "json"])
         .env("FOLDL_SESSION", "agent-1")
@@ -154,4 +160,18 @@ fn export_reuses_an_agent_session() {
     let state = std::fs::read_to_string(dir.join("state.json")).unwrap();
     assert!(state.contains("\"name\":\"svc\""), "kept loaded: {state}");
     assert_eq!(calls(&f), "up\n");
+    agent.kill().unwrap();
+    agent.wait().unwrap();
+    for _ in 0..400 {
+        if calls(&f) == "up\ndown\n" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert_eq!(
+        calls(&f),
+        "up\ndown\n",
+        "the agent's exit releases the lease"
+    );
+    f.settle();
 }
