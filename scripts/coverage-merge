@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Merges lcov reports from several machines (macOS, Linux) into one and
+# prints the summary. Source paths are made relative to the repository so
+# reports from different checkouts line up.
+#   scripts/coverage-merge out.lcov a.lcov b.lcov ...
+set -euo pipefail
+out=$1; shift
+tmp=$(mktemp -d)
+args=()
+for report in "$@"; do
+  name="$tmp/$(basename "$report")"
+  sed -E 's#^SF:.*/(crates/.*)$#SF:\1#' "$report" > "$name"
+  args+=(--add-tracefile "$name")
+done
+nix run nixpkgs#lcov -- --quiet --ignore-errors inconsistent,unused,format "${args[@]}" --output-file "$out"
+nix run nixpkgs#lcov -- --ignore-errors inconsistent,format --summary "$out"
