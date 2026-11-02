@@ -132,6 +132,16 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Named sessions for agents.
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+    /// Set up agent tools to use foldl.
+    Integrate {
+        #[command(subcommand)]
+        tool: Integration,
+    },
     /// Internal: a holder process for a lease or a session.
     #[command(hide = true)]
     Hold {
@@ -141,6 +151,38 @@ pub enum Command {
     /// Internal: write the environment to a file, for script runs.
     #[command(name = "__dump-env", hide = true)]
     DumpEnv { file: PathBuf },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionAction {
+    /// Start (or reuse) a session owned by a process; prints its id.
+    Start {
+        #[arg(long)]
+        id: Option<String>,
+        /// The owning process (default: the caller).
+        #[arg(long)]
+        parent: Option<u32>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Unload everything the session loaded and end it.
+    Stop {
+        #[arg(long)]
+        id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Integration {
+    /// Install Claude Code hooks (SessionStart, CwdChanged).
+    Claude {
+        /// In this project's .claude/settings.json instead of ~/.claude.
+        #[arg(long)]
+        project: bool,
+        /// Internal: run as the hook.
+        #[arg(long)]
+        hook: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -253,6 +295,22 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
         Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
+        Command::Session {
+            action: SessionAction::Start { id, parent, json },
+        } => crate::agent::start_session(sys, id, parent, json),
+        Command::Session {
+            action: SessionAction::Stop { id },
+        } => crate::agent::stop_session(sys, id),
+        Command::Integrate {
+            tool: Integration::Claude { hook: true, .. },
+        } => crate::agent::claude_hook(sys),
+        Command::Integrate {
+            tool:
+                Integration::Claude {
+                    project,
+                    hook: false,
+                },
+        } => crate::agent::integrate_claude(sys, project),
         Command::Hold {
             what: Hold::Lease {
                 parent, sidecar, ..

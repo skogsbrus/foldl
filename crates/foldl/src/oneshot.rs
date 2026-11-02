@@ -42,7 +42,11 @@ fn target(sys: &Sys, dir: Option<PathBuf>) -> Result<PathBuf, Failure> {
         .map_err(|e| Failure::new(Code::Usage, format!("{}: {e}", dir.display())))
 }
 
-fn infos(sys: &Sys, dir: &std::path::Path, config: &foldl_core::config::Config) -> Vec<FolderInfo> {
+pub(crate) fn infos(
+    sys: &Sys,
+    dir: &std::path::Path,
+    config: &foldl_core::config::Config,
+) -> Vec<FolderInfo> {
     let trust = trust_cmd::store(sys);
     let scan = gather::scan(dir, &trust, &Default::default());
     gather::infos(
