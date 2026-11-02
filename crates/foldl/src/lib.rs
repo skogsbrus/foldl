@@ -13,6 +13,7 @@ pub mod gather;
 pub mod git;
 pub mod hold;
 pub mod hook;
+pub mod import;
 pub mod interp;
 pub mod leases;
 pub mod manual;

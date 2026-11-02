@@ -137,6 +137,11 @@ pub enum Command {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Convert another tool's setup into .foldl/.
+    Import {
+        #[command(subcommand)]
+        from: Import,
+    },
     /// Set up agent tools to use foldl.
     Integrate {
         #[command(subcommand)]
@@ -169,6 +174,32 @@ pub enum SessionAction {
     Stop {
         #[arg(long)]
         id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Import {
+    /// Convert .envrc: translate, check parity, direnv deny, allow.
+    Direnv {
+        dir: Option<PathBuf>,
+        /// Don't ask; lines with outside effects stay in the session script.
+        #[arg(long)]
+        yes: bool,
+        /// Put lines with outside effects in a shared migration of this name.
+        #[arg(long)]
+        shared: Option<String>,
+        /// Print the migrations instead of writing them.
+        #[arg(long)]
+        dry_run: bool,
+        /// Also delete .envrc (switches everyone off direnv).
+        #[arg(long)]
+        remove_envrc: bool,
+        /// Keep .foldl/ out of git (.git/info/exclude).
+        #[arg(long, conflicts_with = "committed")]
+        private: bool,
+        /// Plan to commit .foldl/.
+        #[arg(long)]
+        committed: bool,
     },
 }
 
@@ -295,6 +326,33 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Logs { name } => crate::status::logs(sys, &name),
         Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
         Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
+        Command::Import {
+            from:
+                Import::Direnv {
+                    dir,
+                    yes,
+                    shared,
+                    dry_run,
+                    remove_envrc,
+                    private,
+                    committed,
+                },
+        } => {
+            let privacy = match (private, committed) {
+                (true, _) => Some(crate::new_cmd::Privacy::Private),
+                (_, true) => Some(crate::new_cmd::Privacy::Shared),
+                _ => None,
+            };
+            let options = crate::import::Options {
+                dir,
+                yes,
+                shared,
+                dry_run,
+                remove_envrc,
+                privacy,
+            };
+            crate::import::import_direnv(sys, options)
+        }
         Command::Session {
             action: SessionAction::Start { id, parent, json },
         } => crate::agent::start_session(sys, id, parent, json),

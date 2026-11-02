@@ -69,6 +69,8 @@
             pkgs.coreutils
             # Holders describe their sessions with ps.
             pkgs.unixtools.ps
+            # The importer's parity check runs direnv.
+            pkgs.direnv
           ]
           # script(1) for terminal tests; macOS uses its own /usr/bin/script.
           ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.util-linux;
