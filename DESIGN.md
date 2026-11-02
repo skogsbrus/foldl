@@ -1098,6 +1098,19 @@ corrected here.
   session id is `claude-<session_id>`, owned by the nearest ancestor
   process named `claude` (else the hook's parent), so leases last as long
   as Claude Code runs. Verified with a real headless Claude Code session.
+- **2026-11-01 · `foldl import direnv` details.** Q: the flags and order
+  were sketched. Decisions: migrations are `env` (plain exports and
+  `PATH_add`, with `$PWD` written as `${FOLDL_ROOT}`), `flake`,
+  `dotenv`(`-N`), `envrc` (everything else, verbatim, flagged for review)
+  and optionally a shared one; `watch_file` entries join the flake's watch
+  list, or go on the first migration. `--shared=<name>` puts lines that
+  start things outside the shell into a shared migration of that name with
+  a `down.sh` listing suggested stop commands; on a terminal foldl asks;
+  `--yes` keeps them in the session script. `--dry-run` prints the files.
+  The parity check runs only if direnv already allowed the `.envrc` (foldl
+  never allows it for direnv), and both sides execute the code. `.foldl/`
+  must not exist yet. `--private`/`--committed` answer the shared-or-private
+  question as in `foldl new`.
 
 ## Prior art
 
