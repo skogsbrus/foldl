@@ -1111,6 +1111,13 @@ corrected here.
   never allows it for direnv), and both sides execute the code. `.foldl/`
   must not exist yet. `--private`/`--committed` answer the shared-or-private
   question as in `foldl new`.
+- **2026-11-01 · No-op prompt cost.** Q: the goal is "~1ms per prompt when
+  nothing changed". Measured in real terminals: 3.4 ms per prompt for the
+  whole hook (the shell's `$(...)` fork, starting foldl, one `stat` per
+  ancestor and a token compare, `eval`) in both bash 3.2 and zsh, most of
+  it process start-up. Decision (agreed with the user): under 10 ms,
+  unnoticeable at a prompt, is good enough for the MVP; a resident cache
+  or shell-side check is post-MVP if it ever matters.
 
 ## Prior art
 
