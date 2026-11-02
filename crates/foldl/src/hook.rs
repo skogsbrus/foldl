@@ -97,7 +97,14 @@ pub fn hook_step(
     let host = Host {
         nix_available: sys.which("nix").is_some(),
     };
-    let (infos, watched) = gather::infos(&scan, &trust, &config, host);
+    let (mut infos, watched) = gather::infos(&scan, &trust, &config, host);
+    // Fingerprints include watched files, which are known only now; rescan
+    // so a failure is recorded against the fingerprint the next prompt sees.
+    let scan = gather::scan(&sys.cwd, &trust, &watched);
+    infos
+        .iter_mut()
+        .zip(&scan.folders)
+        .for_each(|(info, (_, fp))| info.fingerprint = fp.clone());
     let actual = tracked(sys.env());
     let env = inherited.map_or_else(
         || actual.clone(),

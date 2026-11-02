@@ -308,3 +308,21 @@ fn changes_while_loaded_reload_only_what_changed() {
         "{out:?}"
     );
 }
+
+#[test]
+fn a_failed_folder_with_watched_files_is_not_retried_at_the_next_prompt() {
+    let f = Fixture::new();
+    f.write("config", "x");
+    f.folder(
+        ".",
+        &[
+            ("1-bad/manifest.toml", "version = 1\nwatch = [\"config\"]"),
+            ("1-bad/up.sh", "#!/bin/sh\nexit 1\n"),
+        ],
+    );
+    let out = f.shell(
+        &shells()[0],
+        "cd project; _foldl_hook; _foldl_hook; _foldl_hook",
+    );
+    assert_eq!(out.stderr.matches("bad: up failed").count(), 1, "{out:?}");
+}
