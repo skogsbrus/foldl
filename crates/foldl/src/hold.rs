@@ -165,6 +165,7 @@ pub fn spawn_lease_holder(
     let child = detached(exe, &args).spawn()?;
     drop(lock);
     let record = Sidecar {
+        version: foldl_core::state::STATE_VERSION,
         holder,
         holder_pid: child.id(),
     };

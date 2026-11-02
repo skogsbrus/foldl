@@ -23,8 +23,14 @@ use crate::{fsx, session};
 /// tell live entries from stale ones.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sidecar {
+    #[serde(default = "version")]
+    pub version: u32,
     pub holder: Holder,
     pub holder_pid: u32,
+}
+
+fn version() -> u32 {
+    STATE_VERSION
 }
 
 fn open_lock(path: &Path) -> io::Result<File> {
@@ -292,10 +298,12 @@ mod tests {
             tty: None,
         };
         let live = Sidecar {
+            version: STATE_VERSION,
             holder: me.clone(),
             holder_pid: std::process::id(),
         };
         let dead = Sidecar {
+            version: STATE_VERSION,
             holder: me.clone(),
             holder_pid: 999_999_999,
         };
@@ -310,6 +318,16 @@ mod tests {
         )
         .unwrap();
         fsx::write_atomic(&sidecar_path(&p, &l, "junk"), b"{").unwrap();
+        let old = format!(
+            r#"{{"holder":{},"holder_pid":{}}}"#,
+            serde_json::to_string(&me).unwrap(),
+            std::process::id()
+        );
+        let parsed: Sidecar = serde_json::from_str(&old).unwrap();
+        assert_eq!(
+            parsed.version, STATE_VERSION,
+            "sidecars from before versioning still read"
+        );
         assert_eq!(holders(&p, &l), vec![me]);
         assert!(!sidecar_path(&p, &l, "dead").exists());
     }
