@@ -6,7 +6,9 @@ set -euo pipefail
 msg=$(cat)
 git diff --cached --shortstat
 stashed=0
-if [ -n "$(git status --porcelain --untracked-files=all | grep -v '^[MADR] ' || true)" ]; then
+# FOLDL_NO_STASH=1 when other work is in progress in files the checks
+# don't read (docs).
+if [ -z "${FOLDL_NO_STASH:-}" ] && [ -n "$(git status --porcelain --untracked-files=all | grep -v '^[MADR] ' || true)" ]; then
   git stash push -q --keep-index --include-untracked
   stashed=1
 fi

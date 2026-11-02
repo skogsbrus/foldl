@@ -8,6 +8,11 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Only for checking the home-manager module.
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -16,6 +21,7 @@
       nixpkgs,
       crane,
       rust-overlay,
+      home-manager,
     }:
     let
       systems = [
@@ -88,6 +94,40 @@
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
+          # A static Linux binary, cross-built with zig as the linker so it
+          # also builds on macOS; it needs nothing at run time.
+          linuxTarget =
+            {
+              "aarch64-darwin" = "aarch64-unknown-linux-musl";
+              "aarch64-linux" = "aarch64-unknown-linux-musl";
+              "x86_64-darwin" = "x86_64-unknown-linux-musl";
+              "x86_64-linux" = "x86_64-unknown-linux-musl";
+            }
+            .${pkgs.stdenv.hostPlatform.system};
+          staticToolchain = toolchain.override { targets = [ linuxTarget ]; };
+          staticCrane = (crane.mkLib pkgs).overrideToolchain (_: staticToolchain);
+          staticArgs = commonArgs // {
+            CARGO_BUILD_TARGET = linuxTarget;
+            nativeBuildInputs = [
+              pkgs.cargo-zigbuild
+              pkgs.zig
+            ];
+            preBuild = ''
+              export HOME=$TMPDIR
+              export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
+            '';
+            cargoBuildCommand = "cargo zigbuild --release";
+            cargoCheckCommand = "true";
+            doCheck = false;
+          };
+          foldlLinuxStatic = staticCrane.buildPackage (
+            staticArgs
+            // {
+              cargoArtifacts = staticCrane.buildDepsOnly staticArgs;
+              cargoExtraArgs = "-p foldl";
+            }
+          );
+
           foldl = craneLib.buildPackage (
             commonArgs
             // {
@@ -113,6 +153,7 @@
             testEnv
             bash3
             cargoLlvmCov
+            foldlLinuxStatic
             ;
         };
     in
@@ -125,9 +166,16 @@
         {
           default = s.foldl;
           foldl = s.foldl;
+          foldl-linux-static = s.foldlLinuxStatic;
           bash3 = s.bash3;
         }
       );
+
+      overlays.default = final: _: {
+        foldl = self.packages.${final.stdenv.hostPlatform.system}.default;
+      };
+      homeManagerModules.default = import ./nix/hm-module.nix self;
+      nixosModules.default = import ./nix/nixos-module.nix self;
 
       checks = forAllSystems (
         pkgs:
@@ -137,6 +185,80 @@
         in
         {
           build = s.foldl;
+
+          # The home-manager module puts the hook in bash and zsh and writes
+          # the config.
+          home-manager-module =
+            let
+              home = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home.username = "test";
+                    home.homeDirectory = if pkgs.stdenv.isDarwin then "/Users/test" else "/home/test";
+                    home.stateVersion = "25.05";
+                    programs.bash.enable = true;
+                    programs.zsh.enable = true;
+                    programs.foldl.enable = true;
+                    programs.foldl.settings.verbosity = "quiet";
+                  }
+                ];
+              };
+              files = "${home.activationPackage}/home-files";
+            in
+            pkgs.runCommand "foldl-home-manager-module" { } ''
+              grep -q 'foldl hook bash' ${files}/.bashrc
+              grep -q 'foldl hook zsh' ${files}/.zshrc
+              grep -q 'verbosity = "quiet"' ${files}/.config/foldl/config.toml
+              touch $out
+            '';
+
+          # The NixOS module, evaluated (not built) for Linux.
+          nixos-module =
+            let
+              system = nixpkgs.lib.nixosSystem {
+                system = "aarch64-linux";
+                modules = [
+                  self.nixosModules.default
+                  {
+                    programs.foldl.enable = true;
+                    boot.isContainer = true;
+                    system.stateVersion = "25.05";
+                  }
+                ];
+              };
+              # Evaluated only: the Linux package isn't built from here.
+              text = t: pkgs.writeText "init" (builtins.unsafeDiscardStringContext t);
+              bash = text system.config.programs.bash.interactiveShellInit;
+              zsh = text system.config.programs.zsh.interactiveShellInit;
+            in
+            pkgs.runCommand "foldl-nixos-module" { } ''
+              grep -q 'foldl hook bash' ${bash}
+              grep -q 'foldl hook zsh' ${zsh}
+              touch $out
+            '';
+
+          # The Homebrew formula parses, and its test block's steps pass
+          # against the built binary (brew itself isn't in nixpkgs).
+          homebrew-formula =
+            pkgs.runCommand "foldl-homebrew-formula"
+              {
+                nativeBuildInputs = [
+                  pkgs.ruby
+                  s.foldl
+                ];
+              }
+              ''
+                ruby -c ${./packaging/homebrew/foldl.rb}
+                export HOME=$TMPDIR
+                foldl --version | grep -q foldl
+                mkdir -p p/.foldl/1-env
+                printf 'version = 1\n[env]\nGREETING = "hi"\n' > p/.foldl/1-env/manifest.toml
+                foldl allow p 2>/dev/null
+                test "$(foldl exec p -- sh -c 'echo $GREETING')" = hi
+                touch $out
+              '';
 
           fmt = craneLib.cargoFmt { inherit (commonArgs) src pname version; };
 
