@@ -162,7 +162,9 @@ fn child_shells_start_from_the_parents_baseline() {
         );
         let out = f.shell(
             &shell,
-            &format!("cd project; _foldl_hook; {program} -c '{child}'"),
+            // Not the last command: bash would exec it, and the child would
+            // keep the parent's PID instead of being a child shell.
+            &format!("cd project; _foldl_hook; {program} -c '{child}'; true"),
         );
         let root = f.project.display().to_string();
         assert_eq!(
