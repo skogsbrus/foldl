@@ -242,7 +242,9 @@ With `reuse = "repo"`, a worktree or clone of the same repository whose
 ## Trust
 
 `foldl allow` hashes the whole `.foldl/` directory, local migrations
-included, and shows what changed since the last allow. Nothing loads from a
+included, and shows what changed since the last allow. Files in local
+migrations are listed as changed but their contents are not shown, since
+they often hold secrets. Nothing loads from a
 folder that is not allowed. A folder is allowed, denied (`foldl deny`: not
 loaded, and foldl says so) or ignored (`foldl ignore`: not loaded, silent).
 Non-interactive runs never prompt. You can also trust whole directory trees

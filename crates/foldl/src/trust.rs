@@ -63,10 +63,27 @@ fn text_files(files: &FolderFiles) -> BTreeMap<String, String> {
         .entries
         .iter()
         .filter_map(|(path, entry)| match entry {
-            Entry::File(bytes) => Some((path.clone(), String::from_utf8_lossy(bytes).into_owned())),
+            Entry::File(bytes) => Some((path.clone(), shown(path, bytes))),
             Entry::Dir => None,
         })
         .collect()
+}
+
+/// The text kept and diffed for a file. Local migrations hold personal
+/// settings and secrets, so for them it is only a hash: `allow` says that
+/// they changed without printing, or storing, what is in them.
+fn shown(path: &str, bytes: &[u8]) -> String {
+    let local = path
+        .split('/')
+        .next()
+        .is_some_and(|d| d.ends_with(".local"));
+    match local {
+        true => format!(
+            "(local file, not shown; sha256 {})\n",
+            Hash::of_bytes(bytes).short()
+        ),
+        false => String::from_utf8_lossy(bytes).into_owned(),
+    }
 }
 
 /// Content allowed with `reuse = "repo"`, keyed on its hash.
@@ -139,6 +156,17 @@ impl Store {
 /// A unified diff of what changed since the last allow, file by file.
 pub fn changes(old: &BTreeMap<String, String>, files: &FolderFiles) -> String {
     let new = text_files(files);
+    // Entries stored before local files were hidden still hold their text.
+    let old: BTreeMap<String, String> = old
+        .iter()
+        .map(
+            |(name, text)| match text.starts_with("(local file, not shown") {
+                true => (name.clone(), text.clone()),
+                false => (name.clone(), shown(name, text.as_bytes())),
+            },
+        )
+        .collect();
+    let old = &old;
     let names: std::collections::BTreeSet<&String> = old.keys().chain(new.keys()).collect();
     names
         .into_iter()
@@ -208,5 +236,24 @@ mod tests {
             changes(&old, &files(root, &[("a", "1\n"), ("gone", "x\n")])),
             ""
         );
+    }
+
+    #[test]
+    fn hides_local_files() {
+        let root = Path::new("/r");
+        let key = "5-keys.local/manifest.toml";
+        let first = files(root, &[(key, "KEY = \"sk-old\"\n")]);
+        let stored = text_files(&first);
+        assert!(!stored[key].contains("sk-old"), "{stored:?}");
+        let text = changes(&stored, &files(root, &[(key, "KEY = \"sk-new\"\n")]));
+        assert!(
+            text.contains("+++ b/.foldl/5-keys.local/manifest.toml"),
+            "{text}"
+        );
+        assert!(text.contains("+(local file, not shown; sha256 "), "{text}");
+        assert!(!text.contains("sk-"), "{text}");
+        assert_eq!(changes(&stored, &first), "");
+        let plain: BTreeMap<String, String> = [(key.into(), "KEY = \"sk-old\"\n".into())].into();
+        assert_eq!(changes(&plain, &first), "", "older entries hold the text");
     }
 }
