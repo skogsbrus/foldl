@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Johan Fosse
+"""Records the README demos in a real interactive zsh and renders GIFs.
+
+Each demo types commands into zsh in a pseudo-terminal, with a fresh HOME,
+and writes an asciicast v2 file to docs/demos/<name>.cast. agg (in the dev
+shell) turns it into docs/demos/<name>.gif.
+
+Usage: scripts/demos [name ...]
+FOLDL=path/to/foldl (default result/bin/foldl); DEMO_DEBUG=1 prints the output.
+"""
+
+import json, os, pty, select, shutil, subprocess, sys, tempfile, time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+FOLDL = os.path.realpath(os.environ.get("FOLDL", os.path.join(ROOT, "result/bin/foldl")))
+OUT = os.path.join(ROOT, "docs/demos")
+COLS, ROWS = 80, 16
+
+ZSHRC = f"""export PATH="{os.path.dirname(FOLDL)}:/usr/bin:/bin"
+unsetopt PROMPT_SP
+unset zle_bracketed_paste
+PROMPT='%F{{blue}}%~%f $ '
+eval "$({FOLDL} hook zsh)"
+"""
+
+# name -> (files under HOME, commands typed); folders are allowed beforehand
+# unless a command allows them
+DEMOS = {
+    "enter-leave": (
+        {
+            "app/.foldl/001-env/manifest.toml": 'version = 1\npath_add = ["bin"]\n\n[env]\nDATABASE_URL = "postgres://localhost/app"\n',
+            "app/.foldl/002-tools/manifest.toml": 'version = 1\ninteractive = true\n\n[aliases]\nserve = "echo serving on :8080"\n',
+        },
+        ["cd app", "foldl allow", "echo $DATABASE_URL", "serve", "cd ..", "echo ${DATABASE_URL:-unset}", "serve"],
+    ),
+    "rollback": (
+        {
+            "api/.foldl/001-env/manifest.toml": 'version = 1\n\n[env]\nAPI_URL = "http://localhost:8080"\n',
+            "api/.foldl/002-secrets/manifest.toml": 'version = 1\nwatch = [".env.local"]\n',
+            "api/.foldl/002-secrets/up.sh": "#!/bin/sh\ntest -f .env.local || { echo 'no .env.local; copy .env.example' >&2; exit 1; }\nset -a; . ./.env.local\n",
+            "api/.env.example": "API_TOKEN=change-me\n",
+        },
+        ["cd api", "echo ${API_URL:-unset}", "cp .env.example .env.local", "echo $API_TOKEN"],
+    ),
+}
+
+
+def write(home, files):
+    for rel, text in files.items():
+        p = os.path.join(home, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+        os.chmod(p, 0o755 if rel.endswith(".sh") else 0o644)
+
+
+def record(name):
+    files, commands = DEMOS[name]
+    root = os.path.realpath(tempfile.mkdtemp(prefix="foldl-demo-"))
+    home = os.path.join(root, "home")
+    write(home, {**files, ".zshrc": ZSHRC})
+    env = {"HOME": home, "PATH": f"{os.path.dirname(FOLDL)}:/usr/bin:/bin", "TERM": "xterm-256color",
+           "COLUMNS": str(COLS), "LINES": str(ROWS)}
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(home)
+        os.execve(shutil.which("zsh"), ["zsh", "-i"], env)
+    os.set_blocking(fd, False)
+    events, start = [], time.monotonic()
+
+    def drain(quiet=0.6, limit=20.0):
+        """Reads output until the shell has been quiet for `quiet` seconds."""
+        last, began = time.monotonic(), time.monotonic()
+        while time.monotonic() - last < quiet and time.monotonic() - began < limit:
+            if select.select([fd], [], [], 0.05)[0]:
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    return
+                events.append([round(time.monotonic() - start, 3), "o", data.decode(errors="replace")])
+                last = time.monotonic()
+
+    def resize():
+        import fcntl, struct, termios
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
+
+    resize()
+    drain(1.0)
+    if not any(c.startswith("foldl allow") for c in commands):
+        for d in {rel.split("/")[0] for rel in files}:
+            subprocess.run([FOLDL, "allow", os.path.join(home, d)], env=env, capture_output=True, check=True)
+    events.clear()
+    events.clear()
+    start = time.monotonic()
+    os.write(fd, b"\x0c")  # Ctrl-L clears the screen and redraws the prompt
+    drain(0.8)
+    for command in commands:
+        for ch in command:
+            os.write(fd, ch.encode())
+            drain(0.07, 1.0)
+        time.sleep(0.4)
+        os.write(fd, b"\r")
+        drain(1.5)
+    shown = list(events)
+    os.write(fd, b"exit\r")
+    drain(0.3, 3.0)
+    if os.environ.get("DEMO_DEBUG"):
+        print("".join(e[2] for e in events), file=sys.stderr)
+    os.waitpid(pid, 0)
+    shutil.rmtree(root, ignore_errors=True)
+    cast = os.path.join(OUT, f"{name}.cast")
+    with open(cast, "w") as f:
+        f.write(json.dumps({"version": 2, "width": COLS, "height": ROWS, "env": {"SHELL": "zsh", "TERM": "xterm-256color"}}) + "\n")
+        f.writelines(json.dumps(e) + "\n" for e in shown)
+    subprocess.run(["agg", "--idle-time-limit", "2", "--last-frame-duration", "4", "--font-size", "16",
+                    cast, os.path.join(OUT, f"{name}.gif")], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"docs/demos/{name}.gif")
+
+
+def main():
+    os.makedirs(OUT, exist_ok=True)
+    for name in sys.argv[1:] or DEMOS:
+        record(name)
+
+
+main()

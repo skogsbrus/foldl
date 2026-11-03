@@ -308,6 +308,7 @@
                 s.cargoLlvmCov
                 pkgs.cargo-deny
                 pkgs.tmux
+                pkgs.asciinema-agg
                 pkgs.nixfmt
               ]
               ++ s.testTools;
