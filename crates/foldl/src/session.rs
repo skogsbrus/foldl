@@ -15,7 +15,16 @@ use crate::fsx;
 /// Events kept in `events.jsonl`.
 const EVENTS_KEPT: usize = 1000;
 
+/// Whether `id` can name a session directory: letters, digits, `.`, `_`
+/// and `-`, and not `.` or `..`. Anything else could point outside
+/// `sessions/`, and `session stop` removes the directory.
+pub fn valid_id(id: &str) -> bool {
+    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
+    !id.is_empty() && id != "." && id != ".." && id.chars().all(allowed)
+}
+
 pub fn load(paths: &Paths, id: &str) -> Option<Session> {
+    valid_id(id).then_some(())?;
     let bytes = std::fs::read(paths.session(id).join("state.json")).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
@@ -143,6 +152,18 @@ mod tests {
         remove(&p, "a");
         assert!(!exists(&p, "a"));
         assert_eq!(load(&p, "a"), None);
+    }
+
+    #[test]
+    fn ids_stay_inside_sessions() {
+        for ok in ["1234-abcd", "claude-0f9e.x_y"] {
+            assert!(valid_id(ok), "{ok}");
+        }
+        for bad in ["", ".", "..", "../x", "a/b", "a b", "é"] {
+            assert!(!valid_id(bad), "{bad}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(load(&paths(dir.path()), "../.."), None);
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub fn start_session(
     let paths = sys.paths();
     let parent = parent.unwrap_or_else(parent_pid);
     let id = id.unwrap_or_else(|| session::new_id(parent));
+    if !session::valid_id(&id) {
+        let message = format!("invalid session id {}", quote(id.as_bytes()));
+        let fix = "use letters, digits, '.', '_' and '-'";
+        return Err(Failure::new(Code::Usage, message).with_fix(fix));
+    }
     let existing = session::load(&paths, &id);
     let session = existing.unwrap_or_else(|| Session::new(id.clone(), parent, None));
     session::save(&paths, &session).ctx("saving session")?;
@@ -182,10 +187,10 @@ pub fn claude_hook(sys: &Sys) -> Result<i32, Failure> {
     let env_file = sys
         .var("CLAUDE_ENV_FILE")
         .ok_or(Failure::new(Code::Usage, "CLAUDE_ENV_FILE is not set"))?;
-    let id = format!(
-        "claude-{}",
-        event["session_id"].as_str().unwrap_or("unknown")
-    );
+    let claude = event["session_id"]
+        .as_str()
+        .filter(|s| session::valid_id(s));
+    let id = format!("claude-{}", claude.unwrap_or("unknown"));
     let cwd = event["cwd"].as_str().map_or(sys.cwd.clone(), PathBuf::from);
     let paths = sys.paths();
     let existing = session::load(&paths, &id);

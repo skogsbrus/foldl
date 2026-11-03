@@ -95,6 +95,18 @@ fn session_stop_unloads_everything() {
             .exists()
     );
     assert_eq!(f.run(&["session", "stop", "--id", "nope"]).code, 64);
+    let victim = f.home.join("victim");
+    std::fs::create_dir_all(&victim).unwrap();
+    let escape = "../../../../victim";
+    let bad = f.run(&["session", "start", "--id", escape]);
+    assert_eq!(bad.code, 64, "{bad:?}");
+    assert!(bad.stderr.contains("invalid session id"), "{bad:?}");
+    assert!(!victim.join("state.json").exists());
+    assert_eq!(f.run(&["session", "stop", "--id", escape]).code, 64);
+    assert!(
+        victim.exists(),
+        "stop removed a directory outside sessions/"
+    );
     agent.kill().unwrap();
     agent.wait().unwrap();
     f.settle();
