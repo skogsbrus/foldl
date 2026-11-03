@@ -126,6 +126,27 @@ fn a_failed_up_rolls_back_and_is_not_retried() {
 }
 
 #[test]
+fn a_failed_folder_retries_when_a_watched_file_appears() {
+    let f = Fixture::new();
+    f.folder(
+        ".",
+        &[
+            ("1-env/manifest.toml", "version = 1\n[env]\nOK = \"1\""),
+            ("2-key/manifest.toml", "version = 1\nwatch = [\".key\"]"),
+            ("2-key/up.sh", "#!/bin/sh\ntest -f .key || exit 3\n"),
+        ],
+    );
+    for shell in shells() {
+        let out = f.shell(
+            &shell,
+            "cd project; _foldl_hook; _foldl_hook; touch .key; _foldl_hook; echo \"OK=${OK-unset}\"; rm .key",
+        );
+        assert_eq!(out.stdout, "OK=1\n", "{}: {out:?}", shell.label);
+        assert_eq!(out.stderr.matches("up failed").count(), 1, "{out:?}");
+    }
+}
+
+#[test]
 fn untrusted_folders_say_how_to_fix_once() {
     let f = Fixture::new();
     f.write(

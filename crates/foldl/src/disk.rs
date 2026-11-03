@@ -114,6 +114,22 @@ pub fn expand_watch(root: &Path, globs: &[String]) -> Vec<PathBuf> {
     files
 }
 
+/// Paths whose metadata changes when a file matching a glob appears or
+/// goes: the path itself for a literal glob, else the directory holding its
+/// first wildcard.
+pub fn watch_probes(root: &Path, globs: &[String]) -> Vec<PathBuf> {
+    globs
+        .iter()
+        .map(|g| {
+            let literal: PathBuf = Path::new(g)
+                .components()
+                .take_while(|c| !c.as_os_str().to_string_lossy().contains(['*', '?', '[']))
+                .collect();
+            root.join(literal)
+        })
+        .collect()
+}
+
 /// Hash of the watched files' paths and contents.
 pub fn watch_hash(root: &Path, files: &[PathBuf]) -> Hash {
     let entries: Vec<(String, Entry)> = files
@@ -191,5 +207,19 @@ mod tests {
         fs::write(root.join("a.nix"), "3").unwrap();
         assert_ne!(h, watch_hash(root, &files));
         assert_eq!(watch_hash(root, &[]), Hash::default());
+    }
+
+    #[test]
+    fn probes_notice_files_that_appear() {
+        let root = Path::new("/r");
+        let globs = [".env.local".into(), "src/*.rs".into(), "*.nix".into()];
+        assert_eq!(
+            watch_probes(root, &globs),
+            vec![
+                root.join(".env.local"),
+                root.join("src"),
+                root.to_path_buf()
+            ]
+        );
     }
 }

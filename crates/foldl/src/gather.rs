@@ -149,9 +149,14 @@ fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderSta
         .iter()
         .map(|(name, files)| (name.clone(), disk::watch_hash(root, files)))
         .collect();
+    let probes = folder
+        .migrations
+        .iter()
+        .flat_map(|m| disk::watch_probes(root, &m.watch));
     let mut all: Vec<PathBuf> = per_migration
         .into_iter()
         .flat_map(|(_, files)| files)
+        .chain(probes)
         .collect();
     all.sort();
     all.dedup();
