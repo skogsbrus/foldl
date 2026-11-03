@@ -106,7 +106,8 @@ fn a_killed_terminal_runs_its_downs_and_the_last_session_tears_down() {
             "cd project; _foldl_hook; touch \"$HOME/ready\"; sleep 60",
         );
         wait_for(&f.home.join("ready"));
-        let survivor = f.spawn_shell(&shell, "cd project; _foldl_hook; touch \"$HOME/ready2\"; while [ ! -e \"$HOME/leave\" ]; do sleep 0.01; done; cd /; _foldl_hook");
+        // Gives up after 60s, so a failing assert can't leave it spinning.
+        let survivor = f.spawn_shell(&shell, "cd project; _foldl_hook; touch \"$HOME/ready2\"; i=0; while [ ! -e \"$HOME/leave\" ] && [ $i -lt 6000 ]; do sleep 0.01; i=$((i + 1)); done; cd /; _foldl_hook");
         wait_for(&f.home.join("ready2"));
         killed.kill().unwrap();
         killed.wait().unwrap();
