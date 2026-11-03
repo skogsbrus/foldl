@@ -1,0 +1,35 @@
+# Compile, lint and test on Linux and macOS. Everything comes from the
+# flake, so CI runs what `nix flake check` and the dev shell run locally.
+name: ci
+
+on:
+  push:
+    branches: [main, mvp]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: System
+        run: echo "SYSTEM=$(nix eval --impure --raw --expr builtins.currentSystem)" >> "$GITHUB_ENV"
+      - name: Compile
+        run: nix build -L ".#checks.$SYSTEM.build"
+      - name: Lint
+        run: nix build -L ".#checks.$SYSTEM.fmt" ".#checks.$SYSTEM.clippy"
+      - name: Test
+        run: nix develop -c cargo test --workspace --locked
