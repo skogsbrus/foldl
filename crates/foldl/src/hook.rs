@@ -22,6 +22,11 @@ use crate::sys::Sys;
 use crate::{fsx, gather, session, settings, trust_cmd};
 
 /// The shell code that installs the hook.
+///
+/// The bash hook is adapted from direnv's `_direnv_hook`
+/// (<https://github.com/direnv/direnv>, MIT License,
+/// Copyright (c) 2019 zimbatm and contributors): keep the exit status,
+/// ignore INT around the `eval` and add the hook to `PROMPT_COMMAND` once.
 pub fn hook(sys: &Sys, shell: Shell) -> String {
     let exe = quote(sys.exe.as_os_str().as_encoded_bytes());
     let script = match shell {
