@@ -408,11 +408,12 @@ mod tests {
     fn real_world_leases() {
         use foldl_core::lease::{LeaseRef, LeaseState};
         let dir = tempfile::tempdir().unwrap();
-        let runner = Runner::new("/usr/bin/true".into(), dir.path().into()).unwrap();
+        let truth = crate::sys::true_program();
+        let runner = Runner::new(truth.clone(), dir.path().into()).unwrap();
         let sys = crate::sys::Sys {
             vars: [("HOME".into(), dir.path().as_os_str().to_owned())].into(),
             cwd: "/".into(),
-            exe: "/usr/bin/true".into(),
+            exe: truth,
         };
         let session = Session::new(
             "s".into(),

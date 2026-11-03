@@ -83,6 +83,13 @@ fn is_executable(path: &std::path::Path) -> bool {
     std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
+/// `true` from `PATH`: a harmless program to spawn in tests. Its path
+/// varies (`/usr/bin/true` doesn't exist in the Linux nix sandbox).
+#[cfg(test)]
+pub fn true_program() -> PathBuf {
+    Sys::current().which("true").expect("true on PATH")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

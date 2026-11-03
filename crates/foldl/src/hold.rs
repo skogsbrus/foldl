@@ -281,16 +281,17 @@ mod tests {
             cwd: "/".into(),
             tty: None,
         };
-        let pid = spawn_lease_holder(Path::new("/usr/bin/true"), lock, &sidecar, holder).unwrap();
+        let truth = crate::sys::true_program();
+        let pid = spawn_lease_holder(&truth, lock, &sidecar, holder).unwrap();
         assert!(pid > 0 && sidecar.exists());
         stop(pid);
-        assert!(spawn_session_holder(Path::new("/usr/bin/true"), 1, "s").unwrap() > 0);
+        assert!(spawn_session_holder(&truth, 1, "s").unwrap() > 0);
         assert_eq!(hold_lease(0, &sidecar).unwrap(), Woke::ParentExited);
         assert!(!sidecar.exists());
         let sys = crate::sys::Sys {
             vars: [("HOME".into(), dir.path().as_os_str().to_owned())].into(),
             cwd: "/".into(),
-            exe: "/usr/bin/true".into(),
+            exe: truth,
         };
         assert_eq!(hold_session(&sys, 0, "missing").unwrap(), 0);
     }
