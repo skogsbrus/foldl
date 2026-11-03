@@ -4,8 +4,9 @@
 """Records the README demos in a real interactive zsh and renders GIFs.
 
 Each demo types commands into zsh in a pseudo-terminal, with a fresh HOME,
-and writes an asciicast v2 file to docs/demos/<name>.cast. agg (in the dev
-shell) turns it into docs/demos/<name>.gif.
+and writes an asciicast v2 file to docs/demos/<name>.cast. Two-pane demos
+run zsh in tmux and type into either pane. agg (in the dev shell) turns
+each cast into docs/demos/<name>.gif.
 
 Usage: scripts/demos [name ...]
 FOLDL=path/to/foldl (default result/bin/foldl); DEMO_DEBUG=1 prints the output.
@@ -16,33 +17,81 @@ import json, os, pty, select, shutil, subprocess, sys, tempfile, time
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 FOLDL = os.path.realpath(os.environ.get("FOLDL", os.path.join(ROOT, "result/bin/foldl")))
 OUT = os.path.join(ROOT, "docs/demos")
-COLS, ROWS = 80, 16
+# foldl first, then the tools demos use (python3, git, direnv), then the system.
+TOOLS = [os.path.dirname(FOLDL)] + [os.path.dirname(shutil.which(t)) for t in ("python3", "git", "direnv")]
+PATH = ":".join(dict.fromkeys(TOOLS + ["/usr/bin", "/bin"]))
 
-ZSHRC = f"""export PATH="{os.path.dirname(FOLDL)}:/usr/bin:/bin"
+ZSHRC = f"""export PATH="{PATH}"
 unsetopt PROMPT_SP
 unset zle_bracketed_paste
 PROMPT='%F{{blue}}%~%f $ '
 eval "$({FOLDL} hook zsh)"
 """
 
-# name -> (files under HOME, commands typed); folders are allowed beforehand
-# unless a command allows them
+SERVER_UP = """#!/bin/sh
+nohup python3 -m http.server "$WEB_PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
+echo $! > "$FOLDL_STATE/pid"
+until curl -s "localhost:$WEB_PORT" >/dev/null; do sleep 0.1; done
+"""
+GIT = "git -c user.name=demo -c user.email=demo@example.com"
+
+# Each demo: files under HOME, setup commands run in HOME before recording,
+# then the commands typed (pane, text). Folders are allowed beforehand unless
+# a command allows them.
 DEMOS = {
-    "enter-leave": (
-        {
+    "enter-leave": dict(
+        files={
             "app/.foldl/001-env/manifest.toml": 'version = 1\npath_add = ["bin"]\n\n[env]\nDATABASE_URL = "postgres://localhost/app"\n',
             "app/.foldl/002-tools/manifest.toml": 'version = 1\ninteractive = true\n\n[aliases]\nserve = "echo serving on :8080"\n',
         },
-        ["cd app", "foldl allow", "echo $DATABASE_URL", "serve", "cd ..", "echo ${DATABASE_URL:-unset}", "serve"],
+        commands=["cd app", "foldl allow", "echo $DATABASE_URL", "serve", "cd ..", "echo ${DATABASE_URL:-unset}", "serve"],
     ),
-    "rollback": (
-        {
+    "rollback": dict(
+        files={
             "api/.foldl/001-env/manifest.toml": 'version = 1\n\n[env]\nAPI_URL = "http://localhost:8080"\n',
             "api/.foldl/002-secrets/manifest.toml": 'version = 1\nwatch = [".env.local"]\n',
             "api/.foldl/002-secrets/up.sh": "#!/bin/sh\ntest -f .env.local || { echo 'no .env.local; copy .env.example' >&2; exit 1; }\nset -a; . ./.env.local\n",
             "api/.env.example": "API_TOKEN=change-me\n",
         },
-        ["cd api", "echo ${API_URL:-unset}", "cp .env.example .env.local", "echo $API_TOKEN"],
+        commands=["cd api", "echo ${API_URL:-unset}", "cp .env.example .env.local", "echo $API_TOKEN"],
+    ),
+    "shared": dict(
+        size=(124, 16),
+        panes=2,
+        files={
+            "web/hello.txt": "hello from the shared server\n",
+            "web/.foldl/001-server/manifest.toml": 'version = 1\nscope = "shared"\n\n[ports]\nWEB_PORT = "auto"\n',
+            "web/.foldl/001-server/up.sh": SERVER_UP,
+            "web/.foldl/001-server/down.sh": '#!/bin/sh\nkill "$(cat "$FOLDL_STATE/pid")"\n',
+        },
+        commands=[(0, "cd web"), (0, "curl localhost:$WEB_PORT/hello.txt"), (1, "cd web"),
+                  (1, "curl localhost:$WEB_PORT/hello.txt"), (0, "cd .."), (1, "curl localhost:$WEB_PORT/hello.txt"),
+                  (1, "port=$WEB_PORT; cd .."), (1, "curl -s localhost:$port/hello.txt || echo server stopped")],
+    ),
+    "worktrees": dict(
+        size=(124, 16),
+        panes=2,
+        files={
+            "app/hello.txt": "hello from main\n",
+            "app/.foldl/foldl.toml": 'version = 1\n\n[trust]\nreuse = "repo"\n',
+            "app/.foldl/001-server/manifest.toml": 'version = 1\nscope = "shared"\n\n[ports]\nWEB_PORT = "auto"\n',
+            "app/.foldl/001-server/up.sh": SERVER_UP,
+            "app/.foldl/001-server/down.sh": '#!/bin/sh\nkill "$(cat "$FOLDL_STATE/pid")"\n',
+        },
+        setup=[f"cd app && git init -q && git add -A && {GIT} commit -qm init && git worktree add -q ../app-fix -b fix",
+               "echo 'hello from the fix branch' > app-fix/hello.txt"],
+        commands=[(0, "cd app"), (0, "curl localhost:$WEB_PORT/hello.txt"), (1, "cd app-fix"),
+                  (1, "curl localhost:$WEB_PORT/hello.txt"), (0, "echo $WEB_PORT"), (1, "echo $WEB_PORT")],
+    ),
+    "import-direnv": dict(
+        size=(80, 22),
+        files={
+            "svc/.envrc": "export DATABASE_URL=postgres://localhost/svc\nPATH_add bin\ndotenv\n",
+            "svc/.env": "API_TOKEN=dev-token\n",
+        },
+        setup=["cd svc && direnv allow"],
+        commands=["cd svc", "cat .envrc", "foldl import direnv --dry-run | head -12", "foldl import direnv 2>&1 | tail -4",
+                  "echo $DATABASE_URL $API_TOKEN"],
     ),
 }
 
@@ -57,21 +106,31 @@ def write(home, files):
 
 
 def record(name):
-    files, commands = DEMOS[name]
+    demo = DEMOS[name]
+    cols, rows = demo.get("size", (80, 16))
+    files, panes = demo["files"], demo.get("panes", 1)
     root = os.path.realpath(tempfile.mkdtemp(prefix="foldl-demo-"))
     home = os.path.join(root, "home")
     write(home, {**files, ".zshrc": ZSHRC})
-    env = {"HOME": home, "PATH": f"{os.path.dirname(FOLDL)}:/usr/bin:/bin", "TERM": "xterm-256color",
-           "COLUMNS": str(COLS), "LINES": str(ROWS)}
+    env = {"HOME": home, "PATH": PATH, "TERM": "xterm-256color", "SHELL": shutil.which("zsh"), "LANG": "en_US.UTF-8",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "COLUMNS": str(cols), "LINES": str(rows)}
+    for command in demo.get("setup", []):
+        subprocess.run(["sh", "-c", command], cwd=home, env=env, check=True, capture_output=True)
+    commands = [c if isinstance(c, tuple) else (0, c) for c in demo["commands"]]
+    if not any(c.startswith("foldl allow") for _, c in commands):
+        for d in {rel.split("/")[0] for rel in files if "/.foldl/" in rel}:
+            subprocess.run([FOLDL, "allow", os.path.join(home, d)], env=env, capture_output=True, check=True)
+    tmux = ["tmux", "-u", "-S", os.path.join(root, "tmux"), "-f", "/dev/null"]
+    argv = tmux + ["new-session", "-s", "demo", "-x", str(cols), "-y", str(rows)] if panes > 1 else ["zsh", "-i"]
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(home)
-        os.execve(shutil.which("zsh"), ["zsh", "-i"], env)
+        os.execvpe(argv[0], argv, env)
     os.set_blocking(fd, False)
     events, start = [], time.monotonic()
 
     def drain(quiet=0.6, limit=20.0):
-        """Reads output until the shell has been quiet for `quiet` seconds."""
+        """Reads output until the terminal has been quiet for `quiet` seconds."""
         last, began = time.monotonic(), time.monotonic()
         while time.monotonic() - last < quiet and time.monotonic() - began < limit:
             if select.select([fd], [], [], 0.05)[0]:
@@ -82,37 +141,45 @@ def record(name):
                 events.append([round(time.monotonic() - start, 3), "o", data.decode(errors="replace")])
                 last = time.monotonic()
 
-    def resize():
-        import fcntl, struct, termios
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
+    def keys(pane, *args):
+        """Sends keys to a tmux pane, or writes them to zsh directly."""
+        if panes > 1:
+            # A lone ";" separates tmux commands; "\\;" is the literal.
+            args = ["\\;" if a == ";" else a for a in args]
+            subprocess.run(tmux + ["send-keys", "-t", f"demo:0.{pane}", *args], check=True)
+        else:
+            os.write(fd, "".join({"Enter": "\r", "C-l": "\x0c"}.get(a, a) for a in args if a != "-l").encode())
 
-    resize()
+    import fcntl, struct, termios
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     drain(1.0)
-    if not any(c.startswith("foldl allow") for c in commands):
-        for d in {rel.split("/")[0] for rel in files}:
-            subprocess.run([FOLDL, "allow", os.path.join(home, d)], env=env, capture_output=True, check=True)
-    events.clear()
+    if panes > 1:
+        subprocess.run(tmux + ["set", "-g", "status", "off"], check=True)
+        subprocess.run(tmux + ["split-window", "-h", "-c", home, "-t", "demo"], check=True)
+        drain(1.0)
     events.clear()
     start = time.monotonic()
-    os.write(fd, b"\x0c")  # Ctrl-L clears the screen and redraws the prompt
+    for pane in range(panes):
+        keys(pane, "C-l")  # clears the screen and redraws the prompt
     drain(0.8)
-    for command in commands:
+    for pane, command in commands:
         for ch in command:
-            os.write(fd, ch.encode())
+            keys(pane, "-l", ch)
             drain(0.07, 1.0)
         time.sleep(0.4)
-        os.write(fd, b"\r")
+        keys(pane, "Enter")
         drain(1.5)
     shown = list(events)
-    os.write(fd, b"exit\r")
-    drain(0.3, 3.0)
     if os.environ.get("DEMO_DEBUG"):
         print("".join(e[2] for e in events), file=sys.stderr)
+    for pane in reversed(range(panes)):
+        keys(pane, "exit", "Enter")
+        drain(0.3, 3.0)
     os.waitpid(pid, 0)
     shutil.rmtree(root, ignore_errors=True)
     cast = os.path.join(OUT, f"{name}.cast")
     with open(cast, "w") as f:
-        f.write(json.dumps({"version": 2, "width": COLS, "height": ROWS, "env": {"SHELL": "zsh", "TERM": "xterm-256color"}}) + "\n")
+        f.write(json.dumps({"version": 2, "width": cols, "height": rows, "env": {"SHELL": "zsh", "TERM": "xterm-256color"}}) + "\n")
         f.writelines(json.dumps(e) + "\n" for e in shown)
     subprocess.run(["agg", "--idle-time-limit", "2", "--last-frame-duration", "4", "--font-size", "16",
                     cast, os.path.join(OUT, f"{name}.gif")], check=True,
