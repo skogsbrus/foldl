@@ -157,6 +157,11 @@ fn a_failing_import_is_reported_by_parity() {
     assert!(direnv(&f, &["allow"]).status.success());
     let out = f.run(&["import", "direnv", "--yes"]);
     assert!(out.stderr.contains("foldl couldn't load it ("), "{out:?}");
+    let g = Fixture::new();
+    g.write(".envrc", "export A=1\nexit 1\n");
+    assert!(direnv(&g, &["allow"]).status.success());
+    let out = g.run(&["import", "direnv", "--yes"]);
+    assert!(out.stderr.contains("direnv couldn't export ("), "{out:?}");
 }
 
 #[test]
