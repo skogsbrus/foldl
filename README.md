@@ -37,6 +37,11 @@ cargo install --path crates/foldl
 The flake also provides an overlay, a home-manager module and a NixOS module.
 See [docs/nix.md](docs/nix.md).
 
+foldl is MIT licensed. The crates built into it are listed with their
+licenses in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), which the
+packages install in `share/doc/foldl/`. After changing dependencies, run
+`scripts/licenses`; CI fails until the file matches `Cargo.lock`.
+
 home-manager:
 
 ```nix

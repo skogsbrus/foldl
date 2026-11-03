@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Regenerates THIRD_PARTY_LICENSES.md from Cargo.lock. It builds the same
+# derivation the `licenses` flake check compares against, so the two
+# always agree. Run it after changing dependencies.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+out=$(nix build --no-link --print-out-paths .#third-party-licenses)
+install -m644 "$out" THIRD_PARTY_LICENSES.md
+echo "wrote THIRD_PARTY_LICENSES.md"

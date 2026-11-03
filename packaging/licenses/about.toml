@@ -1,0 +1,32 @@
+# cargo-about: which crates THIRD_PARTY_LICENSES.md lists, and which
+# licenses it accepts. Regenerate with `scripts/licenses`.
+
+# The same allow-list as deny.toml.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unlicense",
+  "CC0-1.0",
+  "Unicode-3.0",
+]
+
+# What we build binaries for: crates only other platforms use (windows-sys)
+# aren't in them.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-musl",
+  "x86_64-unknown-linux-musl",
+]
+
+# Test-only crates are never shipped. Build-time crates (proc macros) are
+# kept: listing them costs nothing.
+ignore-dev-dependencies = true
+ignore-build-dependencies = false

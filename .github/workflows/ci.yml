@@ -28,6 +28,9 @@ jobs:
         run: nix build -L ".#checks.$SYSTEM.build"
       - name: Lint
         run: nix build -L ".#checks.$SYSTEM.fmt" ".#checks.$SYSTEM.clippy"
+      # THIRD_PARTY_LICENSES.md must match Cargo.lock.
+      - name: Licenses
+        run: nix build -L ".#checks.$SYSTEM.licenses"
       # Runs the whole suite under cargo llvm-cov; fails below 100% lines.
       - name: Test and coverage
         run: nix build -L ".#checks.$SYSTEM.coverage"

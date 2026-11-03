@@ -13,6 +13,8 @@ class Foldl < Formula
 
   def install
     system "cargo", "install", *std_cargo_args(path: "crates/foldl")
+    # The crates compiled into the binary require their notices with it.
+    doc.install "THIRD_PARTY_LICENSES.md"
   end
 
   def caveats

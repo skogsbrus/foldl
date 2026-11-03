@@ -127,13 +127,53 @@
             // {
               cargoArtifacts = staticCrane.buildDepsOnly staticArgs;
               cargoExtraArgs = "-p foldl";
+              postInstall = installNotices;
             }
           );
+
+          # THIRD_PARTY_LICENSES.md, generated from Cargo.lock offline with the
+          # vendored crates, so `scripts/licenses` and the `licenses` check
+          # produce the same bytes.
+          thirdPartyLicenses =
+            pkgs.runCommand "foldl-third-party-licenses"
+              {
+                nativeBuildInputs = [
+                  toolchain
+                  pkgs.cargo-about
+                ];
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = lib.fileset.unions [
+                    ./Cargo.toml
+                    ./Cargo.lock
+                    ./crates
+                    ./packaging/licenses
+                  ];
+                };
+                vendor = craneLib.vendorCargoDeps { inherit src; };
+              }
+              ''
+                export HOME=$TMPDIR CARGO_HOME=$TMPDIR/cargo
+                mkdir -p $CARGO_HOME
+                cp $vendor/config.toml $CARGO_HOME/config.toml
+                cd $src
+                cargo about generate --frozen \
+                  -c packaging/licenses/about.toml \
+                  -o $out packaging/licenses/about.hbs
+              '';
+
+          # Our license and the notices of the crates compiled in, which
+          # MIT and Apache-2.0 require to travel with the binary.
+          installNotices = ''
+            install -Dm644 ${./LICENSE} $out/share/doc/foldl/LICENSE
+            install -Dm644 ${thirdPartyLicenses} $out/share/doc/foldl/THIRD_PARTY_LICENSES.md
+          '';
 
           foldl = craneLib.buildPackage (
             commonArgs
             // {
               inherit cargoArtifacts;
+              postInstall = installNotices;
               # Tests run in the checks below, with the pinned shells.
               doCheck = false;
               meta = {
@@ -156,6 +196,7 @@
             bash3
             cargoLlvmCov
             foldlLinuxStatic
+            thirdPartyLicenses
             ;
         };
     in
@@ -169,6 +210,7 @@
           default = s.foldl;
           foldl = s.foldl;
           foldl-linux-static = s.foldlLinuxStatic;
+          third-party-licenses = s.thirdPartyLicenses;
           bash3 = s.bash3;
         }
       );
@@ -187,6 +229,15 @@
         in
         {
           build = s.foldl;
+
+          # THIRD_PARTY_LICENSES.md matches Cargo.lock.
+          licenses = pkgs.runCommand "foldl-licenses-up-to-date" { } ''
+            if ! diff -u ${./THIRD_PARTY_LICENSES.md} ${s.thirdPartyLicenses}; then
+              echo "THIRD_PARTY_LICENSES.md is out of date; run scripts/licenses" >&2
+              exit 1
+            fi
+            touch $out
+          '';
 
           # The home-manager module puts the hook in bash and zsh and writes
           # the config.
@@ -253,6 +304,8 @@
               }
               ''
                 ruby -c ${./packaging/homebrew/foldl.rb}
+                # What the formula's install puts in doc/ must exist.
+                test -s ${./THIRD_PARTY_LICENSES.md}
                 export HOME=$TMPDIR
                 foldl --version | grep -q foldl
                 mkdir -p p/.foldl/1-env
