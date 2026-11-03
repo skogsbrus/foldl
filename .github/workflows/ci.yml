@@ -23,7 +23,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
       - name: System
         run: echo "SYSTEM=$(nix eval --impure --raw --expr builtins.currentSystem)" >> "$GITHUB_ENV"
