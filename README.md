@@ -6,15 +6,12 @@ effects that outlive one shell (services, tunnels, containers), shared safely
 between the many shells and agents working in the same folder. There is no
 daemon.
 
-Enter a folder and its environment loads; leave and it is undone exactly:
+| One server for every shell in the folder | Each worktree gets its own server and port |
+|---|---|
+| ![two shells enter a folder: the first starts a web server, the second joins it; the server stops when the last shell leaves](docs/demos/shared.gif) | ![two worktrees of one repo each start their own web server on their own port, serving their own branch](docs/demos/worktrees.gif) |
 
-![cd into a folder, allow it, use its env and alias, cd out and both are gone](docs/demos/enter-leave.gif)
-
-A failing step rolls the folder back. Fix the cause and it loads again:
-
-![a failing up rolls back; creating the watched .env.local loads the folder](docs/demos/rollback.gif)
-
-The demos are recorded in a real zsh with `scripts/demos`.
+More in [docs/demos.md](docs/demos.md): loading and undoing a folder,
+rolling back a failure, and switching from direnv.
 
 ## Philosophy
 
