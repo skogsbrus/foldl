@@ -1,5 +1,5 @@
-# Compile, lint and test on Linux and macOS. Everything comes from the
-# flake, so CI runs what `nix flake check` and the dev shell run locally.
+# Compile, lint, and test with the 100% line-coverage gate, on Linux and
+# macOS. Each step builds a flake check, as `nix flake check` does locally.
 name: ci
 
 on:
@@ -31,5 +31,6 @@ jobs:
         run: nix build -L ".#checks.$SYSTEM.build"
       - name: Lint
         run: nix build -L ".#checks.$SYSTEM.fmt" ".#checks.$SYSTEM.clippy"
-      - name: Test
-        run: nix develop -c cargo test --workspace --locked
+      # Runs the whole suite under cargo llvm-cov; fails below 100% lines.
+      - name: Test and coverage
+        run: nix build -L ".#checks.$SYSTEM.coverage"
