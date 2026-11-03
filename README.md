@@ -257,6 +257,12 @@ If a loaded folder changes, it stays loaded and foldl asks you to run
 prompt. A changed `shared` migration is not restarted under other sessions;
 run `foldl redo <name>`.
 
+Trust covers `.foldl/` only. As with direnv, files outside it that a
+migration uses (`.env`, `flake.nix`, `path_add` directories, scripts that
+`up.sh` runs) can change without another `allow`. If agents work in your
+folders, don't let them run `foldl allow`. [SECURITY.md](SECURITY.md) has
+the details, a line for `AGENTS.md` and how to report a vulnerability.
+
 ## Commands
 
 Every command takes `-q`/`--quiet` (errors only) and `-v`/`--verbose`
