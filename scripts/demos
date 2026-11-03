@@ -12,13 +12,13 @@ Usage: scripts/demos [name ...]
 FOLDL=path/to/foldl (default result/bin/foldl); DEMO_DEBUG=1 prints the output.
 """
 
-import json, os, pty, select, shutil, subprocess, sys, tempfile, time
+import json, os, pty, re, select, shutil, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 FOLDL = os.path.realpath(os.environ.get("FOLDL", os.path.join(ROOT, "result/bin/foldl")))
 OUT = os.path.join(ROOT, "docs/demos")
 # foldl first, then the tools demos use (python3, git, direnv), then the system.
-TOOLS = [os.path.dirname(FOLDL)] + [os.path.dirname(shutil.which(t)) for t in ("python3", "git", "direnv")]
+TOOLS = [os.path.dirname(FOLDL)] + [os.path.dirname(shutil.which(t)) for t in ("python3", "git", "direnv", "nix")]
 PATH = ":".join(dict.fromkeys(TOOLS + ["/usr/bin", "/bin"]))
 
 ZSHRC = f"""export PATH="{PATH}"
@@ -34,6 +34,23 @@ echo $! > "$FOLDL_STATE/pid"
 until curl -s "localhost:$WEB_PORT" >/dev/null; do sleep 0.1; done
 """
 GIT = "git -c user.name=demo -c user.email=demo@example.com"
+SERVER_DOWN = '#!/bin/sh\nkill "$(cat "$FOLDL_STATE/pid")"\n'
+SERVER_MANIFEST = 'version = 1\nscope = "shared"\n\n[ports]\nWEB_PORT = "auto"\n'
+
+
+def flake():
+    """A flake whose dev shell has hello and cowsay, on this repo's nixpkgs."""
+    out = subprocess.run(["nix", "flake", "archive", "--json", "--dry-run", ROOT], capture_output=True, text=True)
+    nixpkgs = json.loads(out.stdout)["inputs"]["nixpkgs"]["path"]
+    system = subprocess.run(["nix", "eval", "--impure", "--raw", "--expr", "builtins.currentSystem"],
+                            capture_output=True, text=True).stdout
+    return f"""{{
+  inputs.nixpkgs.url = "path:{nixpkgs}";
+  outputs = {{ nixpkgs, ... }}:
+    let pkgs = nixpkgs.legacyPackages.{system};
+    in {{ devShells.{system}.default = pkgs.mkShell {{ packages = [ pkgs.hello pkgs.cowsay ]; }}; }};
+}}
+"""
 
 # Each demo: files under HOME, setup commands run in HOME before recording,
 # then the commands typed (pane, text). Folders are allowed beforehand unless
@@ -93,7 +110,85 @@ DEMOS = {
         commands=["cd svc", "cat .envrc", "foldl import direnv --dry-run | head -12", "foldl import direnv 2>&1 | tail -4",
                   "echo $DATABASE_URL $API_TOKEN"],
     ),
+    "killed": dict(
+        size=(124, 16),
+        panes=2,
+        tmux=[["set", "-g", "remain-on-exit", "on"]],
+        files={
+            "web/hello.txt": "hello from the shared server\n",
+            "web/.foldl/001-server/manifest.toml": SERVER_MANIFEST,
+            "web/.foldl/001-server/up.sh": SERVER_UP,
+            "web/.foldl/001-server/down.sh": SERVER_DOWN,
+        },
+        commands=[(0, "cd web"), (1, "cd web"), (1, "echo $$ > ~/right.pid"), (0, "port=$WEB_PORT; cd .."),
+                  (0, "kill -9 $(cat ~/right.pid)"), (0, "sleep 1; curl -s localhost:$port || echo server stopped")],
+    ),
+    "interactive": dict(
+        zshrc="alias ll='ls -l'\n",
+        files={
+            "app/.foldl/001-tools/manifest.toml": 'version = 1\ninteractive = true\n\n[aliases]\nll = "ls -la"\n',
+            "app/.foldl/001-tools/up.sh": '#!/bin/sh\ndeploy() { echo "deploying $(basename "$PWD") to ${1:-staging}"; }\n',
+        },
+        commands=["alias ll", "cd app", "alias ll", "deploy prod", "cd ..", "alias ll", "deploy prod"],
+    ),
+    "nix-flake": dict(
+        files={
+            "proj/.foldl/001-dev/manifest.toml": 'version = 1\nbuiltin = "nix-flake"\nwatch = ["flake.nix", "flake.lock"]\n',
+        },
+        setup=["cd proj && cat > flake.nix <<'EOF'\n{flake}EOF\nnix --extra-experimental-features 'nix-command flakes' flake lock"
+               " && nix --extra-experimental-features 'nix-command flakes' print-dev-env >/dev/null"],
+        commands=["cd proj", "cowsay hello from the flake", "cd ..", "cd proj", "echo oops >> flake.nix",
+                  "hello"],
+    ),
+    "edit-reload": dict(
+        size=(80, 20),
+        files={
+            "api/.env": "API_TOKEN=dev-token\n",
+            "api/.foldl/001-secrets/manifest.toml": 'version = 1\nbuiltin = "dotenv"\nwatch = [".env"]\n',
+            "api/.foldl/002-log/manifest.toml": 'version = 1\n\n[env]\nLOG_LEVEL = "info"\n',
+        },
+        allow=["api"],
+        commands=["cd api", "echo API_TOKEN=rotated > .env", "echo $API_TOKEN",
+                  "sed -i '' s/info/debug/ .foldl/002-log/manifest.toml", "foldl allow", "echo $LOG_LEVEL"],
+    ),
+    "nested": dict(
+        files={
+            "mono/.foldl/001-toolchain/manifest.toml": 'version = 1\n\n[env]\nTOOLCHAIN = "stable"\n',
+            "mono/api/.foldl/001-api/manifest.toml": 'version = 1\n\n[env]\nSERVICE = "api"\n',
+            "mono/web/.foldl/001-web/manifest.toml": 'version = 1\n\n[env]\nSERVICE = "web"\n',
+        },
+        allow=["mono", "mono/api", "mono/web"],
+        commands=["cd mono/api", "echo $TOOLCHAIN $SERVICE", "cd ../web", "echo $TOOLCHAIN $SERVICE", "cd ../..",
+                  "echo ${TOOLCHAIN:-unset}"],
+    ),
+    "dirty": dict(
+        size=(80, 18),
+        files={
+            "svc/.foldl/001-queue/manifest.toml": 'version = 1\nscope = "shared"\n',
+            "svc/.foldl/001-queue/up.sh": "#!/bin/sh\necho started\n",
+            "svc/.foldl/001-queue/down.sh": '#!/bin/sh\nif [ -e "$FOLDL_STATE/tried" ]; then echo stopped; exit 0; fi\n'
+                                           'touch "$FOLDL_STATE/tried"\necho "queue busy: 3 jobs still running" >&2\nexit 1\n',
+        },
+        commands=["cd svc", "cd ..", "cd svc", "r"],
+    ),
+    "status": dict(
+        size=(80, 18),
+        files={
+            "web/hello.txt": "hello\n",
+            "web/.foldl/001-env/manifest.toml": 'version = 1\n\n[env]\nAPP_ENV = "dev"\n',
+            "web/.foldl/002-server/manifest.toml": SERVER_MANIFEST,
+            "web/.foldl/002-server/up.sh": SERVER_UP + 'echo "serving hello.txt on port $WEB_PORT"\n',
+            "web/.foldl/002-server/down.sh": SERVER_DOWN,
+        },
+        commands=["cd web", "foldl status", "foldl logs server"],
+    ),
 }
+
+
+def prompted(output):
+    """Whether terminal output ends at a shell prompt or a foldl question."""
+    text = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", output).rstrip(" ")
+    return text.endswith("$") or text.endswith(">")
 
 
 def write(home, files):
@@ -111,15 +206,18 @@ def record(name):
     files, panes = demo["files"], demo.get("panes", 1)
     root = os.path.realpath(tempfile.mkdtemp(prefix="foldl-demo-"))
     home = os.path.join(root, "home")
-    write(home, {**files, ".zshrc": ZSHRC})
+    write(home, {**files, ".zshrc": ZSHRC + demo.get("zshrc", "")})
     env = {"HOME": home, "PATH": PATH, "TERM": "xterm-256color", "SHELL": shutil.which("zsh"), "LANG": "en_US.UTF-8",
            "GIT_CONFIG_GLOBAL": "/dev/null", "COLUMNS": str(cols), "LINES": str(rows)}
     for command in demo.get("setup", []):
+        command = command.replace("{flake}", flake()) if "{flake}" in command else command
         subprocess.run(["sh", "-c", command], cwd=home, env=env, check=True, capture_output=True)
     commands = [c if isinstance(c, tuple) else (0, c) for c in demo["commands"]]
-    if not any(c.startswith("foldl allow") for _, c in commands):
-        for d in {rel.split("/")[0] for rel in files if "/.foldl/" in rel}:
-            subprocess.run([FOLDL, "allow", os.path.join(home, d)], env=env, capture_output=True, check=True)
+    allows = demo.get("allow")
+    if allows is None and not any(c.startswith("foldl allow") for _, c in commands):
+        allows = {rel.split("/")[0] for rel in files if "/.foldl/" in rel}
+    for d in allows or []:
+        subprocess.run([FOLDL, "allow", os.path.join(home, d)], env=env, capture_output=True, check=True)
     tmux = ["tmux", "-u", "-S", os.path.join(root, "tmux"), "-f", "/dev/null"]
     argv = tmux + ["new-session", "-s", "demo", "-x", str(cols), "-y", str(rows)] if panes > 1 else ["zsh", "-i"]
     pid, fd = pty.fork()
@@ -155,6 +253,8 @@ def record(name):
     drain(1.0)
     if panes > 1:
         subprocess.run(tmux + ["set", "-g", "status", "off"], check=True)
+        for option in demo.get("tmux", []):
+            subprocess.run(tmux + option, check=True)
         subprocess.run(tmux + ["split-window", "-h", "-c", home, "-t", "demo"], check=True)
         drain(1.0)
     events.clear()
@@ -168,13 +268,22 @@ def record(name):
             drain(0.07, 1.0)
         time.sleep(0.4)
         keys(pane, "Enter")
-        drain(1.5)
+        if panes > 1:
+            drain(1.5)
+            continue
+        # Wait for the prompt (or foldl's own question) to come back.
+        since = len(events)
+        while not prompted("".join(e[2] for e in events[since:])) and time.monotonic() - start < 600:
+            drain(0.3, 5.0)
+        drain(1.2)
     shown = list(events)
     if os.environ.get("DEMO_DEBUG"):
         print("".join(e[2] for e in events), file=sys.stderr)
-    for pane in reversed(range(panes)):
-        keys(pane, "exit", "Enter")
-        drain(0.3, 3.0)
+    if panes > 1:
+        subprocess.run(tmux + ["kill-server"])
+    else:
+        keys(0, "exit", "Enter")
+    drain(0.3, 3.0)
     os.waitpid(pid, 0)
     shutil.rmtree(root, ignore_errors=True)
     cast = os.path.join(OUT, f"{name}.cast")
