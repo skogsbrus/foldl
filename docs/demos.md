@@ -14,6 +14,7 @@ nix develop -c scripts/demos shared                  # one
 - [Enter and leave](#enter-and-leave)
 - [Shared services](#shared-services)
 - [Killed terminals](#killed-terminals)
+- [Claude Code](#claude-code)
 - [Worktrees](#worktrees)
 - [Aliases and functions](#aliases-and-functions)
 - [Nested folders](#nested-folders)
@@ -49,6 +50,17 @@ a small holder process that notices its shell is gone and runs the leave
 for it, so the server still stops.
 
 ![the last shell using a shared server is killed with kill -9, and the server stops anyway](demos/killed.gif)
+
+## Claude Code
+
+This shell has no foldl hook, so `cd web` loads nothing and the server
+isn't running. `foldl integrate claude --project` added foldl's hooks to the
+folder's `.claude/settings.json`. When Claude Code starts there, its session
+loads the folder, so the server starts and `WEB_PORT` reaches Claude's
+tools. When Claude exits, its session leaves and the server stops. See
+[docs/agents.md](agents.md).
+
+![curl fails before Claude starts; claude -p finds the server through WEB_PORT; curl fails again after Claude exits](demos/claude.gif)
 
 ## Worktrees
 

@@ -10,9 +10,9 @@ daemon.
 |---|---|
 | ![two shells enter a folder: the first starts a web server, the second joins it; the server stops when the last shell leaves](docs/demos/shared.gif) | ![two worktrees of one repo each start their own web server on their own port, serving their own branch](docs/demos/worktrees.gif) |
 
-More in [docs/demos.md](docs/demos.md): killed terminals that still clean
-up, aliases and functions, monorepos, Nix flakes, rollback, and switching
-from direnv.
+More in [docs/demos.md](docs/demos.md): Claude Code sessions, killed
+terminals that still clean up, aliases and functions, monorepos, Nix flakes,
+rollback, and switching from direnv.
 
 ## Philosophy
 
