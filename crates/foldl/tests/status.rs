@@ -27,7 +27,7 @@ fn status_shows_this_sessions_migrations() {
     );
     let out = f.shell(&shells()[0], &script);
     let mut lines = out.stdout.lines();
-    assert_eq!(lines.next(), Some("~/project  (1 sessions)"));
+    assert_eq!(lines.next(), Some("~/project  (1 session)"));
     assert_eq!(lines.next(), Some("  001 env     session up"));
     assert_eq!(lines.next(), Some("  002 script  session up"));
     let json: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -83,7 +83,7 @@ fn status_outside_a_session() {
         .output()
         .unwrap();
     let want = [
-        "~/project  (1 sessions)",
+        "~/project  (1 session)",
         "  001 env     session up  bash only",
         "  002 script  session down",
         "~/project/denied  (0 sessions, denied)",

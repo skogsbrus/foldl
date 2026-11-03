@@ -98,10 +98,11 @@ fn folder_text(folder: &Value, home: &str) -> String {
         Some(true) => ", private (not committed)",
         _ => "",
     };
-    let head = format!(
-        "{root}  ({} sessions{trust}{private})\n",
-        folder["sessions"]
-    );
+    let sessions = match folder["sessions"].as_u64() {
+        Some(1) => "1 session".to_string(),
+        n => format!("{} sessions", n.unwrap_or_default()),
+    };
+    let head = format!("{root}  ({sessions}{trust}{private})\n");
     let width = folder["migrations"]
         .as_array()
         .into_iter()
