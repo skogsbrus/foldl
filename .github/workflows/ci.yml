@@ -1,5 +1,5 @@
-# Compile, lint, and test with the 100% line-coverage gate, on Linux and
-# macOS. Each step builds a flake check, as `nix flake check` does locally.
+# Compile, lint, check licenses, and test with the 100% line-coverage gate,
+# on Linux and macOS. Each step builds a flake check, as `nix flake check` does locally.
 name: ci
 
 on:
@@ -28,9 +28,10 @@ jobs:
         run: nix build -L ".#checks.$SYSTEM.build"
       - name: Lint
         run: nix build -L ".#checks.$SYSTEM.fmt" ".#checks.$SYSTEM.clippy"
-      # THIRD_PARTY_LICENSES.md must match Cargo.lock.
+      # Dependencies use only allowed licenses and sources (cargo-deny), and
+      # THIRD_PARTY_LICENSES.md matches Cargo.lock.
       - name: Licenses
-        run: nix build -L ".#checks.$SYSTEM.licenses"
+        run: nix build -L ".#checks.$SYSTEM.deny" ".#checks.$SYSTEM.licenses"
       # Runs the whole suite under cargo llvm-cov; fails below 100% lines.
       - name: Test and coverage
         run: nix build -L ".#checks.$SYSTEM.coverage"
