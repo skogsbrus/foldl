@@ -194,6 +194,10 @@ Built-ins:
 - `dotenv`: options `file` (default `".env"`) and `required` (default
   `true`).
 
+Each built-in watches the files it reads (`dotenv` its `file`, a local
+`nix-flake` its `flake.nix` and `flake.lock`), so editing them reloads the
+migration without listing them in `watch`.
+
 Examples:
 
 ```toml

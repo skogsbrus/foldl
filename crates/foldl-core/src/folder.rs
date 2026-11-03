@@ -173,6 +173,29 @@ pub enum Builtin {
     Dotenv { file: String, required: bool },
 }
 
+impl Builtin {
+    /// The files the built-in reads, as `watch` globs relative to
+    /// `FOLDL_ROOT`, so editing them reloads the migration as direnv's
+    /// `dotenv` and `use flake` do. Absolute paths and remote flakes can't
+    /// be watched.
+    pub fn watched(&self) -> Vec<String> {
+        let relative = |p: &str| !p.starts_with('/');
+        match self {
+            Builtin::Dotenv { file, .. } if relative(file) => vec![globset::escape(file)],
+            Builtin::NixFlake { flake } if relative(flake) && !flake.contains(':') => {
+                let dir = match flake.trim_end_matches('/') {
+                    "." | "" => String::new(),
+                    dir => format!("{}/", globset::escape(dir)),
+                };
+                ["flake.nix", "flake.lock"]
+                    .map(|f| format!("{dir}{f}"))
+                    .to_vec()
+            }
+            _ => vec![],
+        }
+    }
+}
+
 /// What a shared migration's lease is keyed on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -595,6 +618,9 @@ fn resolve(
         .iter()
         .filter(|g| globset::Glob::new(g).is_err() || g.starts_with('/'));
     issues.extend(bad_globs.map(|g| cx.err(format!("watch: '{g}' is not a valid relative glob"))));
+    let implied = builtin.iter().flat_map(Builtin::watched);
+    let implied: Vec<String> = implied.filter(|g| !watch.contains(g)).collect();
+    let watch = [watch, implied].concat();
     let lease = match raw.lease.as_deref() {
         _ if !shared => None,
         None | Some("folder") => Some(LeaseSpec::Folder),

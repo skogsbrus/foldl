@@ -445,3 +445,24 @@ fn warns_without_failing() {
         x.starts_with("warning: .foldl/2-b/manifest.toml: builtin = \"nix-flake\" needs nix")
     }));
 }
+
+#[test]
+fn built_ins_watch_the_files_they_read() {
+    let dotenv = |file: &str| Builtin::Dotenv {
+        file: file.into(),
+        required: true,
+    };
+    let flake = |flake: &str| Builtin::NixFlake {
+        flake: flake.into(),
+    };
+    assert_eq!(dotenv(".env").watched(), [".env"]);
+    assert_eq!(dotenv("conf/a[1].env").watched(), ["conf/a[[]1[]].env"]);
+    assert!(dotenv("/etc/app.env").watched().is_empty());
+    assert_eq!(flake(".").watched(), ["flake.nix", "flake.lock"]);
+    assert_eq!(flake("nix/").watched(), ["nix/flake.nix", "nix/flake.lock"]);
+    assert!(flake("github:o/r").watched().is_empty());
+    assert!(flake("/abs").watched().is_empty());
+    let manifest = "version = 1\nbuiltin = \"dotenv\"\nwatch = [\"x\", \".env\"]";
+    let folder = load(&files(&[("1-a/manifest.toml", manifest)]), Host::default()).unwrap();
+    assert_eq!(folder.migrations[0].watch, ["x", ".env"], "no duplicates");
+}

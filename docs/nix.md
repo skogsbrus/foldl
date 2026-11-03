@@ -12,8 +12,10 @@ detection happens at run time.
 # .foldl/002-flake/manifest.toml
 version = 1
 builtin = "nix-flake"
-watch = ["flake.nix", "flake.lock"]
 ```
+
+`flake.nix` and `flake.lock` are watched without listing them. Add files
+the flake imports, such as `nix/shell.nix`, to `watch`.
 
 Option:
 

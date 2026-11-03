@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{Fixture, path_without};
+use common::{Fixture, path_without, shells};
 
 const FAKE_NIX: &str = r#"#!/bin/sh
 echo "$*" >> "$HOME/nixcalls"
@@ -78,6 +78,32 @@ fn dotenv_loads_and_reports_problems() {
     std::fs::remove_file(f.project.join(".env")).unwrap();
     let out = f.run(&["exec", "--", "true"]);
     assert!(out.stderr.contains("dotenv: .env: No such file"), "{out:?}");
+}
+
+#[test]
+fn editing_a_built_ins_files_reloads_it() {
+    let f = Fixture::new();
+    let path = fake_nix(&f);
+    f.write(".env", "A=1\n");
+    f.write("flake.nix", "{ outputs = _: {}; }");
+    f.folder(
+        ".",
+        &[
+            ("1-env/manifest.toml", "version = 1\nbuiltin = \"dotenv\""),
+            (
+                "2-dev/manifest.toml",
+                "version = 1\nbuiltin = \"nix-flake\"",
+            ),
+        ],
+    );
+    let script = format!(
+        "export PATH='{path}'; cd project; _foldl_hook; echo \"A=$A\"\n\
+         sleep 0.01; echo A=2 > .env; _foldl_hook; echo \"A=$A\"\n\
+         echo '# edited' >> flake.nix; _foldl_hook; echo \"A=$A\""
+    );
+    let out = f.shell(&shells()[0], &script);
+    assert_eq!(out.stdout, "A=1\nA=2\nA=2\n", "{out:?}");
+    assert_eq!(nix_calls(&f), 2, "flake.nix changed: {out:?}");
 }
 
 #[test]
