@@ -31,25 +31,37 @@ pub fn nearest(dir: &Path) -> Option<PathBuf> {
     ancestors(dir).pop()
 }
 
-/// Reads everything under `<root>/.foldl/`.
-pub fn read_folder(root: &Path) -> io::Result<FolderFiles> {
+/// Reads everything under `<root>/.foldl/`. A symlink is an error unless
+/// `follow` is set: it would let a repository make foldl read, show and
+/// hash files from anywhere, such as `~/.aws/credentials`.
+pub fn read_folder(root: &Path, follow: bool) -> io::Result<FolderFiles> {
     let mut entries = BTreeMap::new();
-    read_into(&root.join(".foldl"), "", &mut entries)?;
+    read_into(&root.join(".foldl"), "", follow, &mut entries)?;
     Ok(FolderFiles {
         root: root.to_path_buf(),
         entries,
     })
 }
 
-fn read_into(dir: &Path, prefix: &str, entries: &mut BTreeMap<String, Entry>) -> io::Result<()> {
+fn read_into(
+    dir: &Path,
+    prefix: &str,
+    follow: bool,
+    entries: &mut BTreeMap<String, Entry>,
+) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let name = format!("{prefix}{}", entry.file_name().to_string_lossy());
         let path = entry.path();
+        if !follow && fs::symlink_metadata(&path)?.is_symlink() {
+            return Err(io::Error::other(format!(
+                ".foldl/{name} is a symlink; foldl follows them only with follow_symlinks = true in config.toml"
+            )));
+        }
         match fs::metadata(&path)?.is_dir() {
             true => {
                 entries.insert(name.clone(), Entry::Dir);
-                read_into(&path, &format!("{name}/"), entries)?;
+                read_into(&path, &format!("{name}/"), follow, entries)?;
             }
             false => {
                 entries.insert(name, Entry::File(fs::read(&path)?));
@@ -92,8 +104,10 @@ fn stat_into(dir: &Path, hasher: &mut Sha256) {
         .map(|e| e.path())
         .collect();
     children.sort();
+    // This runs at every prompt, before trust: never walk into a linked
+    // directory, which could be the whole home directory.
     for child in children {
-        match child.is_dir() {
+        match fs::symlink_metadata(&child).is_ok_and(|m| m.is_dir()) {
             true => stat_into(&child, hasher),
             false => stat_one(&child, hasher),
         }
@@ -163,17 +177,28 @@ mod tests {
         fs::create_dir_all(inner.join(".foldl")).unwrap();
         assert_eq!(ancestors(&inner), vec![root.clone(), inner.clone()]);
         assert_eq!(nearest(&root.join("a")), Some(root.clone()));
-        let files = read_folder(&root).unwrap();
+        let files = read_folder(&root, false).unwrap();
         let keys: Vec<&String> = files.entries.keys().collect();
         assert_eq!(keys, ["1-x", "1-x/manifest.toml", "1-x/sub"]);
-        assert!(read_folder(&root.join("a")).is_err());
+        assert!(read_folder(&root.join("a"), false).is_err());
+        let secret = root.join("secret");
+        fs::write(&secret, "key").unwrap();
+        std::os::unix::fs::symlink(&secret, root.join(".foldl/1-x/link")).unwrap();
+        let refused = read_folder(&root, false).unwrap_err().to_string();
+        assert!(
+            refused.contains(".foldl/1-x/link is a symlink"),
+            "{refused}"
+        );
+        let followed = read_folder(&root, true).unwrap();
+        assert_eq!(followed.entries["1-x/link"], Entry::File(b"key".to_vec()));
+        fs::remove_file(root.join(".foldl/1-x/link")).unwrap();
         fs::write(root.join(".foldl/1-x/sub/unreadable"), "").unwrap();
         fs::set_permissions(
             root.join(".foldl/1-x/sub/unreadable"),
             std::os::unix::fs::PermissionsExt::from_mode(0o000),
         )
         .unwrap();
-        assert!(read_folder(&root).is_err());
+        assert!(read_folder(&root, false).is_err());
     }
 
     #[test]
@@ -189,6 +214,12 @@ mod tests {
         assert_ne!(before, after);
         fs::write(root.join(".foldl/1-x/f"), "").unwrap();
         assert_ne!(after, fingerprint(root, &[watched]));
+        let outside = root.join("outside");
+        fs::create_dir_all(outside.join("sub")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join(".foldl/1-x/home")).unwrap();
+        let linked = fingerprint(root, &[]);
+        fs::write(outside.join("sub/deep"), "").unwrap();
+        assert_eq!(linked, fingerprint(root, &[]), "doesn't walk into links");
     }
 
     #[test]

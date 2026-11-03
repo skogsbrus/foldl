@@ -40,7 +40,8 @@ fn home(sys: &Sys) -> String {
 
 /// Reads and validates a folder, printing its issues.
 fn validated(sys: &Sys, root: &Path) -> Result<(FolderFiles, Folder), Failure> {
-    let files = disk::read_folder(root).ctx("reading .foldl")?;
+    let follow = crate::settings::load(sys, None).follow_symlinks;
+    let files = disk::read_folder(root, follow).ctx("reading .foldl")?;
     let host = Host {
         nix_available: sys.which("nix").is_some(),
     };

@@ -14,6 +14,7 @@ errors. Durations are strings such as `"500ms"`, `"30s"`, `"10m"`.
 | `on_dirty` | `"retry"`, `"skip"`, `"abort"` | `"abort"` | what non-interactive runs do with a dirty lease |
 | `trusted_prefixes` | array of paths | `[]` | folders under these paths load without `foldl allow`; a leading `~/` is expanded |
 | `port_range` | `[low, high]` | `[20000, 29999]` | inclusive range for `[ports]` entries set to `"auto"` |
+| `follow_symlinks` | bool | `false` | whether `.foldl/` may contain symlinks |
 
 A migration's own `timeout` and `down_timeout` override these.
 
@@ -46,6 +47,16 @@ A folder under a prefix still must not be denied: `foldl deny` and
 `low` must be at least 1 and not above `high`. foldl picks ports in this
 range, skips ports in its registry and ports it cannot bind on 127.0.0.1,
 and tends to give the same port after a restart.
+
+## `follow_symlinks`
+
+By default a symlink anywhere in `.foldl/` makes the folder invalid, and
+nothing in it loads. A link can point anywhere, so a cloned repository
+could otherwise make `foldl allow` print and hash a file such as
+`~/.aws/credentials`. With `true`, foldl reads, hashes and copies what the
+links point to. It is a per-user setting, so a repository can't turn it on
+for itself. Changes inside a linked directory are noticed only when
+something in `.foldl/` itself changes.
 
 ## Directories
 

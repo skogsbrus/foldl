@@ -108,7 +108,7 @@ fn reused(root: &Path, folder: &foldl_core::folder::Folder, trust: &Store) -> bo
 fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderStatus, Vec<PathBuf>) {
     let entry = trust.get(root);
     let marked = entry.as_ref().map(|e| e.state);
-    let files = match (marked, disk::read_folder(root)) {
+    let files = match (marked, disk::read_folder(root, config.follow_symlinks)) {
         (Some(TrustState::Ignored), _) => return (FolderStatus::Ignored, vec![]),
         (Some(TrustState::Denied), _) => return (FolderStatus::Denied, vec![]),
         (_, Err(e)) => {

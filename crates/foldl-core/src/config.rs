@@ -41,6 +41,9 @@ pub struct Config {
     pub trusted_prefixes: Vec<PathBuf>,
     /// Inclusive range `[ports] = "auto"` allocates from.
     pub port_range: (u16, u16),
+    /// Whether `.foldl/` may contain symlinks. They point outside what the
+    /// repository controls, so a folder holding one is invalid by default.
+    pub follow_symlinks: bool,
 }
 
 impl Default for Config {
@@ -53,6 +56,7 @@ impl Default for Config {
             on_dirty: OnDirty::Abort,
             trusted_prefixes: vec![],
             port_range: (20000, 29999),
+            follow_symlinks: false,
         }
     }
 }
@@ -68,6 +72,7 @@ struct RawConfig {
     on_dirty: Option<OnDirty>,
     trusted_prefixes: Option<Vec<PathBuf>>,
     port_range: Option<[u16; 2]>,
+    follow_symlinks: Option<bool>,
 }
 
 /// Parses config text. `home` expands a leading `~/` in trusted prefixes.
@@ -109,6 +114,7 @@ pub fn parse_config(text: &str, home: &str) -> Result<Config, String> {
             .map(expand)
             .collect(),
         port_range: range,
+        follow_symlinks: raw.follow_symlinks.unwrap_or(defaults.follow_symlinks),
     })
 }
 
@@ -133,6 +139,7 @@ mod tests {
             on_dirty = "retry"
             trusted_prefixes = ["~/work", "/srv"]
             port_range = [4000, 4010]
+            follow_symlinks = true
             "#,
             "/h",
         )
@@ -147,6 +154,7 @@ mod tests {
             vec![PathBuf::from("/h/work"), PathBuf::from("/srv")]
         );
         assert_eq!(c.port_range, (4000, 4010));
+        assert!(c.follow_symlinks);
     }
 
     #[test]

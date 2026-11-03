@@ -30,6 +30,27 @@ fn allow_shows_changes_since_the_last_allow() {
 }
 
 #[test]
+fn symlinks_are_refused_unless_the_config_allows_them() {
+    let f = Fixture::new();
+    f.write(".foldl/1-env/manifest.toml", ENV);
+    let secret = f.home.join(".aws/credentials");
+    std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+    std::fs::write(&secret, "aws_secret_access_key=hunter2\n").unwrap();
+    let link = f.project.join(".foldl/1-env/README");
+    std::os::unix::fs::symlink(&secret, link).unwrap();
+    let refused = f.run(&["allow"]);
+    assert_ne!(refused.code, 0, "{refused:?}");
+    assert!(
+        refused.stderr.contains("1-env/README is a symlink"),
+        "{refused:?}"
+    );
+    assert!(!format!("{refused:?}").contains("hunter2"), "{refused:?}");
+    f.write("../.config/foldl/config.toml", "follow_symlinks = true\n");
+    let followed = f.run(&["allow"]);
+    assert_eq!(followed.code, 0, "{followed:?}");
+}
+
+#[test]
 fn allow_refuses_invalid_folders() {
     let f = Fixture::new();
     f.write(".foldl/1-env/manifest.toml", "version = 1\n");
