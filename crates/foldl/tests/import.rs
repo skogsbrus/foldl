@@ -192,7 +192,7 @@ fn asks_about_services_on_a_terminal() {
     };
     let path = path_without("direnv");
     let mut child = f
-        .prepare(cmd)
+        .terminal(cmd)
         .env("PATH", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

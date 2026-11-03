@@ -106,6 +106,15 @@ impl Fixture {
         self.prepare(cmd)
     }
 
+    /// `prepare` for script(1), which runs its command with `$SHELL` and
+    /// otherwise falls back to the user's login shell (`/noshell` in the
+    /// Linux nix sandbox).
+    pub fn terminal(&self, cmd: Command) -> Command {
+        let mut cmd = self.prepare(cmd);
+        cmd.env("SHELL", which("sh"));
+        cmd
+    }
+
     /// Gives any command the fixture's clean environment and directory.
     pub fn prepare(&self, mut cmd: Command) -> Command {
         cmd.current_dir(&self.project).env_clear();
@@ -296,6 +305,15 @@ fn glob(pattern: &std::path::Path) -> Vec<PathBuf> {
                 .filter(|p| p.exists())
                 .collect()
         })
+}
+
+/// `program` from `PATH`. Not `/bin/sh` for `sh`: in the Linux nix sandbox
+/// that is busybox, which picks its applet from the name it runs under.
+pub fn which(program: &str) -> PathBuf {
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join(program))
+        .find(|p| p.exists())
+        .unwrap()
 }
 
 /// `PATH` without directories that contain `program`.

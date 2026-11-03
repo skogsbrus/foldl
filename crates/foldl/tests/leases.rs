@@ -217,7 +217,7 @@ fn on_a_terminal(f: &Fixture, script: &str, answer: &str) -> String {
         false => cmd.args(["-qec", &format!("bash -c '{setup}'"), "/dev/null"]),
     };
     let mut child = f
-        .prepare(cmd)
+        .terminal(cmd)
         .current_dir(&f.home)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

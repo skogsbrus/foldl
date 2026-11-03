@@ -142,7 +142,7 @@ fn integrate_installs_hooks_once_and_keeps_others() {
 fn fake_claude(f: &Fixture, env_file: &std::path::Path) -> std::process::Child {
     let bin = f.home.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    std::os::unix::fs::symlink("/bin/sh", bin.join("claude")).unwrap();
+    std::os::unix::fs::symlink(common::which("sh"), bin.join("claude")).unwrap();
     let script = format!(
         "n=0; i=1; while [ ! -e \"$HOME/quit\" ] && [ $n -lt 500 ]; do\n\
          if [ -e \"$HOME/event-$i\" ]; then '{}' integrate claude --hook < \"$HOME/event-$i\"; touch \"$HOME/done-$i\"; i=$((i+1)); fi\n\

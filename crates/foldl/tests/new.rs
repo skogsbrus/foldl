@@ -126,7 +126,7 @@ fn on_a_terminal(f: &Fixture, name: &str, answer: &str) -> String {
             .arg("/dev/null"),
     };
     let mut child = f
-        .prepare(cmd)
+        .terminal(cmd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
