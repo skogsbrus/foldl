@@ -20,7 +20,18 @@ fn repo_with_foldl(f: &Fixture, reuse: &str) {
     f.git(&f.project, &["add", "."]);
     f.git(&f.project, &["commit", "-q", "-m", "one"]);
     f.git(&f.project, &["commit", "-q", "--allow-empty", "-m", "two"]);
+    let upstream = f.home.join("upstream.git");
+    let from = f.project.to_str().unwrap();
+    f.git(
+        &f.home,
+        &["clone", "-q", "--bare", from, upstream.to_str().unwrap()],
+    );
+    f.git(&f.project, &["remote", "add", "origin", &url(&upstream)]);
     assert_eq!(f.run(&["allow"]).code, 0);
+}
+
+fn url(dir: &std::path::Path) -> String {
+    format!("file://{}", dir.display())
 }
 
 fn loads(f: &Fixture, dir: &std::path::Path) -> String {
@@ -55,7 +66,7 @@ fn shallow_clones_fall_back_to_path_trust() {
     let f = Fixture::new();
     repo_with_foldl(&f, "repo");
     let clone = f.home.join("clone");
-    let url = format!("file://{}", f.project.display());
+    let url = url(&f.home.join("upstream.git"));
     f.git(
         &f.home,
         &["clone", "-q", "--depth", "1", &url, clone.to_str().unwrap()],
@@ -64,6 +75,32 @@ fn shallow_clones_fall_back_to_path_trust() {
     let full = f.home.join("full");
     f.git(&f.home, &["clone", "-q", &url, full.to_str().unwrap()]);
     assert_eq!(loads(&f, &full), "A=1\n");
+}
+
+#[test]
+fn a_fork_needs_allow() {
+    let f = Fixture::new();
+    repo_with_foldl(&f, "repo");
+    let fork = f.home.join("fork.git");
+    let upstream = f.home.join("upstream.git");
+    let from = upstream.to_str().unwrap();
+    f.git(
+        &f.home,
+        &["clone", "-q", "--bare", from, fork.to_str().unwrap()],
+    );
+    let clone = f.home.join("forked");
+    f.git(
+        &f.home,
+        &["clone", "-q", &url(&fork), clone.to_str().unwrap()],
+    );
+    assert_eq!(loads(&f, &clone), "A=unset\n", "same history, other remote");
+    let direct = f.home.join("direct");
+    let project = url(&f.project);
+    f.git(
+        &f.home,
+        &["clone", "-q", &project, direct.to_str().unwrap()],
+    );
+    assert_eq!(loads(&f, &direct), "A=unset\n", "origin is the folder");
 }
 
 #[test]

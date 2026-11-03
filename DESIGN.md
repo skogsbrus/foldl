@@ -504,8 +504,10 @@ reuse = "repo"     # default "none"
 ```
 
 With `reuse = "repo"`, a folder whose `.foldl/` hash matches one already
-allowed is trusted, provided both folders' repositories share a root commit.
-New worktrees and clones, which agents create without running `allow`, work
+allowed is trusted, provided both folders' repositories share a root commit
+and are the same repository: they share a git dir (worktrees) or a remote
+URL (clones from the same place). A fork shares the root commit but not the
+remote, so it needs an `allow`. New worktrees and clones, which agents create without running `allow`, work
 immediately, while a branch that changes a migration still needs an `allow`.
 The setting is part of the hashed content, so turning it on needs an `allow`
 too. Shallow clones have no root commit and fall back to path-based trust.
@@ -989,6 +991,10 @@ corrected here.
   repository's root commits; another folder with the same `.foldl/` hash is
   trusted if its repository shares one of them. `deny`/`ignore` on a path
   still win.
+- **2026-11-03 · Forks don't reuse trust.** Q: every fork shares the root
+  commit, and the hash covers only `.foldl/`, so a fork could keep
+  `.foldl/` and change `flake.nix`. Decision: the content index also
+  records the git common dir and remote URLs; reuse needs one in common.
 - **2026-11-01 · Lease state is keyed by migration name.** Q: a lease may
   hold several shared migrations, and a custom key may be used from
   several folders. Decision: the lease's `state.json` lists entries by

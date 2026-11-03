@@ -28,6 +28,23 @@ pub fn root_commits(dir: &Path) -> Option<Vec<String>> {
     Some(roots.lines().map(str::to_string).collect())
 }
 
+/// What makes two checkouts the same repository rather than, say, a fork
+/// sharing its history: the git dir all worktrees share, and each
+/// remote's URL (without a trailing `/` or `.git`).
+pub fn identities(dir: &Path) -> Vec<String> {
+    let common = common_dir(dir).and_then(|d| d.canonicalize().ok());
+    let urls = git(dir, &["config", "--get-regexp", r"^remote\..*\.url$"]).unwrap_or_default();
+    let remotes = urls.lines().filter_map(|line| {
+        let url = line.split_once(' ')?.1.trim_end_matches('/');
+        Some(format!("remote:{}", url.trim_end_matches(".git")))
+    });
+    common
+        .map(|d| format!("dir:{}", d.display()))
+        .into_iter()
+        .chain(remotes)
+        .collect()
+}
+
 /// The working tree's top directory.
 pub fn toplevel(dir: &Path) -> Option<PathBuf> {
     git(dir, &["rev-parse", "--show-toplevel"]).map(PathBuf::from)
@@ -76,7 +93,22 @@ mod tests {
         assert_eq!(toplevel(&root), None);
         assert_eq!(common_dir(&root), None);
         assert!(!is_ignored(&root, "x"));
+        assert!(identities(&root).is_empty());
         repo(&root);
+        let url = "remote add origin git@example.com:me/app.git/";
+        Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(url.split(' '))
+            .output()
+            .unwrap();
+        assert_eq!(
+            identities(&root),
+            [
+                format!("dir:{}", root.join(".git").display()),
+                "remote:git@example.com:me/app".to_string()
+            ]
+        );
         assert_eq!(root_commits(&root).unwrap().len(), 1);
         assert_eq!(toplevel(&root), Some(root.clone()));
         assert_eq!(

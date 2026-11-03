@@ -92,17 +92,17 @@ fn leases(
         .collect()
 }
 
-/// Trust keyed on content: the same `.foldl/` was allowed in a repository
-/// sharing a root commit with this one.
+/// Trust keyed on content: the same `.foldl/` was allowed in this
+/// repository: one sharing a root commit, and a git dir (a worktree) or a
+/// remote URL (a clone from the same place). A fork shares the root commit
+/// but not the remote.
 fn reused(root: &Path, folder: &foldl_core::folder::Folder, trust: &Store) -> bool {
-    let allowed_in = trust.content_roots(&folder.hash);
-    let here = match (folder.reuse, allowed_in.is_empty()) {
-        (foldl_core::manifest::Reuse::Repo, false) => {
-            crate::git::root_commits(root).unwrap_or_default()
-        }
-        _ => vec![],
-    };
-    here.iter().any(|commit| allowed_in.contains(commit))
+    let (roots, repos) = trust.content_repos(&folder.hash);
+    let wanted = folder.reuse == foldl_core::manifest::Reuse::Repo && !roots.is_empty();
+    let shares = |mine: Vec<String>, allowed: &[String]| mine.iter().any(|x| allowed.contains(x));
+    wanted
+        && shares(crate::git::root_commits(root).unwrap_or_default(), &roots)
+        && shares(crate::git::identities(root), &repos)
 }
 
 fn status(root: &Path, trust: &Store, config: &Config, host: Host) -> (FolderStatus, Vec<PathBuf>) {

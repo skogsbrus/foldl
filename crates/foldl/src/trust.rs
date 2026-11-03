@@ -92,6 +92,10 @@ struct ContentEntry {
     version: u32,
     hash: Hash,
     roots: Vec<String>,
+    /// [`crate::git::identities`] of those repositories. Forks share root
+    /// commits, so reuse needs one of these too.
+    #[serde(default)]
+    repos: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,24 +124,30 @@ impl Store {
         self.dir.join("content").join(format!("{}.json", hash.0))
     }
 
-    /// Root commits of repositories where this content was allowed.
-    pub fn content_roots(&self, hash: &Hash) -> Vec<String> {
+    /// Root commits and identities of repositories where this content was
+    /// allowed.
+    pub fn content_repos(&self, hash: &Hash) -> (Vec<String>, Vec<String>) {
         let bytes = fs::read(self.content_path(hash)).unwrap_or_default();
         serde_json::from_slice::<ContentEntry>(&bytes)
-            .map(|e| e.roots)
+            .map(|e| (e.roots, e.repos))
             .unwrap_or_default()
     }
 
-    /// Records that content was allowed in a repository with these roots.
-    pub fn allow_content(&self, hash: &Hash, roots: &[String]) -> io::Result<()> {
-        let mut all = self.content_roots(hash);
-        all.extend(roots.iter().cloned());
-        all.sort();
-        all.dedup();
+    /// Records that content was allowed in a repository with these roots
+    /// and identities.
+    pub fn allow_content(&self, hash: &Hash, roots: &[String], repos: &[String]) -> io::Result<()> {
+        let merged = |mut all: Vec<String>, new: &[String]| {
+            all.extend(new.iter().cloned());
+            all.sort();
+            all.dedup();
+            all
+        };
+        let (old_roots, old_repos) = self.content_repos(hash);
         let entry = ContentEntry {
             version: STATE_VERSION,
             hash: hash.clone(),
-            roots: all,
+            roots: merged(old_roots, roots),
+            repos: merged(old_repos, repos),
         };
         let json = serde_json::to_vec_pretty(&entry).map_err(io::Error::other)?;
         fsx::write_atomic(&self.content_path(hash), &json)

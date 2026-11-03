@@ -66,12 +66,15 @@ pub fn allow(sys: &Sys, dir: Option<PathBuf>) -> Result<i32, Failure> {
     let store = store(sys);
     let previous = store.get(&root).map(|e| e.files).unwrap_or_default();
     print!("{}", changes(&previous, &files));
-    let roots = match folder.reuse {
-        Reuse::Repo => crate::git::root_commits(&root).unwrap_or_default(),
-        Reuse::None => vec![],
+    let (roots, repos) = match folder.reuse {
+        Reuse::Repo => (
+            crate::git::root_commits(&root).unwrap_or_default(),
+            crate::git::identities(&root),
+        ),
+        Reuse::None => (vec![], vec![]),
     };
     store
-        .allow_content(&folder.hash, &roots)
+        .allow_content(&folder.hash, &roots, &repos)
         .ctx("writing trust")?;
     store
         .set(&TrustEntry::allowed(&files, folder.hash))

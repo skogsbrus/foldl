@@ -237,7 +237,9 @@ reuse = "repo"   # default "none"
 ```
 
 With `reuse = "repo"`, a worktree or clone of the same repository whose
-`.foldl/` has the same content is trusted without `foldl allow`.
+`.foldl/` has the same content is trusted without `foldl allow`. A clone
+counts as the same repository when it shares history and a remote URL with
+the allowed one, so a fork needs its own `foldl allow`.
 
 ## Trust
 
