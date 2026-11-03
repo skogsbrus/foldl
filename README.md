@@ -6,6 +6,16 @@ effects that outlive one shell (services, tunnels, containers), shared safely
 between the many shells and agents working in the same folder. There is no
 daemon.
 
+Enter a folder and its environment loads; leave and it is undone exactly:
+
+![cd into a folder, allow it, use its env and alias, cd out and both are gone](docs/demos/enter-leave.gif)
+
+A failing step rolls the folder back. Fix the cause and it loads again:
+
+![a failing up rolls back; creating the watched .env.local loads the folder](docs/demos/rollback.gif)
+
+The demos are recorded in a real zsh with `scripts/demos`.
+
 ## Philosophy
 
 - Zero-cost abstractions and optimal performance
