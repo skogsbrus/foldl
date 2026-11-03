@@ -89,17 +89,48 @@ pub fn import_direnv(sys: &Sys, options: Options) -> Result<i32, Failure> {
         fsx::ensure_dir(target.parent().unwrap_or(&root)).ctx("creating .foldl")?;
         std::fs::write(&target, content).ctx("writing .foldl")?;
     }
-    trust_cmd::allow(sys, Some(root.clone()))?;
-    parity(sys, &root);
+    // Allowing runs the .envrc's code, so only do it for one the user
+    // already trusted in direnv.
+    let trusted = allowed_by_direnv(sys, &root);
+    match &trusted {
+        Some(direnv) => {
+            trust_cmd::allow(sys, Some(root.clone()))?;
+            parity(sys, &root, direnv);
+        }
+        None => eprintln!(
+            "foldl: direnv hasn't allowed this .envrc, so foldl didn't allow it either; review {shown}/.foldl, then run foldl allow {shown}"
+        ),
+    }
     disable_direnv(sys, &root, options.remove_envrc)?;
-    eprintln!(
-        "foldl: imported {shown}/.envrc into {} migrations; they load at the next prompt",
-        files
-            .iter()
-            .filter(|(p, _)| p.ends_with("manifest.toml"))
-            .count()
-    );
+    let count = files
+        .iter()
+        .filter(|(p, _)| p.ends_with("manifest.toml"))
+        .count();
+    let when = match trusted {
+        Some(_) => "they load at the next prompt",
+        None => "they load once allowed",
+    };
+    eprintln!("foldl: imported {shown}/.envrc into {count} migrations; {when}");
     Ok(0)
+}
+
+/// direnv, if it has allowed `root`'s `.envrc` (`direnv status --json`
+/// reports `allowed: 0`). Without direnv, nobody has.
+fn allowed_by_direnv(sys: &Sys, root: &Path) -> Option<PathBuf> {
+    let direnv = sys.which("direnv")?;
+    let out = Command::new(&direnv)
+        .args(["status", "--json"])
+        .current_dir(root)
+        .env_remove("DIRENV_DIR")
+        .env_remove("DIRENV_DIFF")
+        .output();
+    let status: Value = out
+        .ok()
+        .and_then(|o| serde_json::from_slice(&o.stdout).ok())
+        .unwrap_or_default();
+    let found = &status["state"]["foundRC"];
+    let path = found["path"].as_str().map(PathBuf::from);
+    (found["allowed"] == 0 && path == Some(root.join(".envrc"))).then_some(direnv)
 }
 
 /// A command's stdout as an env map, or why not.
@@ -129,11 +160,7 @@ fn json_env(mut cmd: Command) -> Result<BTreeMap<String, Value>, String> {
 
 /// Compares what direnv and foldl export for the folder and prints the
 /// differences.
-fn parity(sys: &Sys, root: &Path) {
-    let Some(direnv) = sys.which("direnv") else {
-        eprintln!("foldl: direnv isn't on PATH; parity not checked");
-        return;
-    };
+fn parity(sys: &Sys, root: &Path, direnv: &Path) {
     let mut direnv_cmd = Command::new(direnv);
     direnv_cmd
         .args(["export", "json"])

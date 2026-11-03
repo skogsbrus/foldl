@@ -83,13 +83,26 @@ fn differences_and_unchecked_parity_are_reported() {
         "{out:?}"
     );
     assert!(!f.project.join(".envrc").exists());
-    let g = Fixture::new();
-    g.write(".envrc", "export A=1\n");
-    let out = g.run(&["import", "direnv", "--yes"]);
+}
+
+#[test]
+fn an_envrc_direnv_never_allowed_is_not_run_or_allowed() {
+    if !has_direnv() {
+        return;
+    }
+    let f = Fixture::new();
+    f.write(".envrc", "touch ran\nexport A=1\n");
+    let out = f.run(&["import", "direnv", "--yes"]);
+    assert_eq!(out.code, 0, "{out:?}");
     assert!(
-        out.stderr.contains("direnv couldn't export ("),
-        "not allowed: {out:?}"
+        out.stderr
+            .contains("direnv hasn't allowed this .envrc, so foldl didn't allow it either"),
+        "{out:?}"
     );
+    assert!(out.stderr.contains("they load once allowed"), "{out:?}");
+    assert!(!f.project.join("ran").exists(), "the .envrc's code ran");
+    assert!(read(&f, ".foldl/002-envrc/up.sh").contains("touch ran\n"));
+    assert_eq!(f.run(&["exec", "--", "true"]).code, 77, "untrusted");
 }
 
 #[test]
@@ -104,7 +117,7 @@ fn without_direnv_it_still_imports() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{stderr}");
     assert!(
-        stderr.contains("direnv isn't on PATH; parity not checked"),
+        stderr.contains("direnv hasn't allowed this .envrc, so foldl didn't allow it"),
         "{stderr}"
     );
     assert!(stderr.contains("couldn't run direnv deny"), "{stderr}");

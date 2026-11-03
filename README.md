@@ -395,7 +395,8 @@ converts an `.envrc` into `.foldl/`.
    never allows the `.envrc` for direnv. Both sides run the code.
 4. It runs `direnv deny` for you. `--remove-envrc` also deletes `.envrc`,
    which switches the whole team off direnv.
-5. It writes `.foldl/` and runs `foldl allow`.
+5. It writes `.foldl/`. Only if direnv had allowed the `.envrc` does it
+   run `foldl allow` too; otherwise review `.foldl/` and allow it yourself.
 
 `.foldl/` must not exist yet. `--dry-run` prints the migrations instead of
 writing them.
