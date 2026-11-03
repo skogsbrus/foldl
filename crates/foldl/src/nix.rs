@@ -38,7 +38,6 @@ const SKIPPED: &[&str] = &[
     "NIX_BUILD_TOP",
     "NIX_BUILD_CORES",
     "NIX_LOG_FD",
-    "NIX_STORE",
     "SSL_CERT_FILE",
     "NIX_SSL_CERT_FILE",
     "SHLVL",
@@ -145,6 +144,7 @@ mod tests {
             "FOO": {"type": "exported", "value": "bar"},
             "PATH": {"type": "exported", "value": "/nix/bin"},
             "HOME": {"type": "exported", "value": "/homeless-shelter"},
+            "NIX_STORE": {"type": "exported", "value": "/nix/store"},
             "local": {"type": "var", "value": "x"},
             "arr": {"type": "array", "value": ["a"]}
         }}"#;
@@ -157,6 +157,8 @@ mod tests {
         assert_eq!(got["FOO"], Value::from("bar"));
         assert_eq!(got["PATH"], Value::from("/nix/bin:/usr/bin"));
         assert_eq!(got["HOME"], Value::from("/h"));
+        // The compiler wrappers in a dev shell fail without it.
+        assert_eq!(got["NIX_STORE"], Value::from("/nix/store"));
         assert!(!got.contains_key("local") && !got.contains_key("arr"));
         assert_eq!(apply(br#"{}"#, &Env::new()).unwrap(), Env::new());
         assert!(
