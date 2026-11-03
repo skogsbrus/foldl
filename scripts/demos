@@ -25,7 +25,11 @@ ZSHRC = f"""export PATH="{PATH}"
 unsetopt PROMPT_SP
 unset zle_bracketed_paste
 PROMPT='%F{{blue}}%~%f $ '
-eval "$({FOLDL} hook zsh)"
+"""
+HOOK = f'eval "$({FOLDL} hook zsh)"\n'
+# Claude Code finds its login through the real HOME; foldl's state stays in
+# the demo's XDG directories.
+CLAUDE = f"""claude() {{ HOME={os.environ["HOME"]} command {shutil.which("claude") or "claude"} "$@"; }}
 """
 
 SERVER_UP = """#!/bin/sh
@@ -182,6 +186,21 @@ DEMOS = {
         },
         commands=["cd web", "foldl status", "foldl logs server"],
     ),
+    "claude": dict(
+        size=(124, 18),
+        hook=False,
+        zshrc=CLAUDE,
+        files={
+            "web/hello.txt": "hello from the shared server\n",
+            "web/.foldl/001-server/manifest.toml": 'version = 1\nscope = "shared"\n\n[env]\nWEB_PORT = "8765"\n',
+            "web/.foldl/001-server/up.sh": SERVER_UP,
+            "web/.foldl/001-server/down.sh": SERVER_DOWN,
+        },
+        setup=["cd web && foldl integrate claude --project"],
+        commands=["cd web", "curl -s localhost:8765/hello.txt || echo nothing on :8765",
+                  "claude -p 'What does the server on port $WEB_PORT serve at /hello.txt?' --allowedTools 'Bash(printenv:*)' 'Bash(curl:*)'",
+                  "sleep 1; curl -s localhost:8765/hello.txt || echo nothing on :8765"],
+    ),
 }
 
 
@@ -206,9 +225,12 @@ def record(name):
     files, panes = demo["files"], demo.get("panes", 1)
     root = os.path.realpath(tempfile.mkdtemp(prefix="foldl-demo-"))
     home = os.path.join(root, "home")
-    write(home, {**files, ".zshrc": ZSHRC + demo.get("zshrc", "")})
+    hook = HOOK if demo.get("hook", True) else ""
+    write(home, {**files, ".zshrc": ZSHRC + hook + demo.get("zshrc", "")})
     env = {"HOME": home, "PATH": PATH, "TERM": "xterm-256color", "SHELL": shutil.which("zsh"), "LANG": "en_US.UTF-8",
-           "GIT_CONFIG_GLOBAL": "/dev/null", "COLUMNS": str(cols), "LINES": str(rows)}
+           "GIT_CONFIG_GLOBAL": "/dev/null", "COLUMNS": str(cols), "LINES": str(rows),
+           "USER": os.environ.get("USER", ""), "LOGNAME": os.environ.get("USER", ""),
+           **{f"XDG_{d}_HOME": os.path.join(home, f".xdg/{d.lower()}") for d in ("STATE", "CACHE", "DATA", "CONFIG")}}
     for command in demo.get("setup", []):
         command = command.replace("{flake}", flake()) if "{flake}" in command else command
         subprocess.run(["sh", "-c", command], cwd=home, env=env, check=True, capture_output=True)
