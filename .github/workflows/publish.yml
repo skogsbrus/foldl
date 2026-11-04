@@ -27,6 +27,8 @@ jobs:
       github.triggering_actor == 'skogsbrus'
     runs-on: ubuntu-latest
     environment: Cargo publish
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     permissions:
       # Push the v<version> tag.
       contents: write
@@ -37,6 +39,7 @@ jobs:
 
       # Refuse a version that is already out, before building anything.
       - name: Version
+        id: version
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
           core=$(sed -n 's/^foldl-core = .*version = "\([^"]*\)".*/\1/p' crates/foldl/Cargo.toml)
@@ -58,6 +61,7 @@ jobs:
             fi
           done
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # main passed CI on its pull request; these catch what publishing
       # itself needs: it builds, its licenses are allowed and listed.
@@ -74,3 +78,50 @@ jobs:
         run: |
           git tag "v$VERSION"
           git push origin "v$VERSION"
+
+  # The static Linux binary for each architecture, built on that
+  # architecture. Runs only once the crates are out and the tag exists;
+  # it never sees the crates.io token.
+  binaries:
+    needs: publish
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: v${{ needs.publish.outputs.version }}
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+      - name: Archive
+        run: scripts/release-archive "${{ needs.publish.outputs.version }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binaries-${{ matrix.runner }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # The GitHub Release for the tag: generated notes, both archives and
+  # their checksums. If it fails, rerunning the failed jobs is safe: the
+  # crates and the tag are already out and aren't touched again.
+  release:
+    needs: [publish, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: dist
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          cd dist
+          sha256sum ./*.tar.gz > SHA256SUMS
+          gh release create "v$VERSION" ./*.tar.gz SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+            --title "foldl $VERSION"

@@ -28,6 +28,14 @@ The workflow:
    and listed.
 4. Runs `cargo publish --workspace`, `foldl-core` first.
 5. Tags the commit `v<version>` and pushes the tag.
+6. Builds the static Linux binary on an x86_64 and an arm64 runner, each
+   packed with `LICENSE` and `THIRD_PARTY_LICENSES.md` by
+   `scripts/release-archive`.
+7. Creates the GitHub Release for the tag, with generated notes, both
+   archives and a `SHA256SUMS` file.
+
+Steps 6 and 7 never see the token. If one fails, **Re-run failed jobs**
+picks up from there; the crates and the tag are already out.
 
 If publishing fails after `foldl-core` is out, fix the cause and rerun:
 step 2 then reports `foldl-core` as published. Publish `foldl` by hand
