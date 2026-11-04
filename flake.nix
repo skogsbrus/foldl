@@ -92,7 +92,8 @@
             inherit src;
             strictDeps = true;
             pname = "foldl";
-            version = "0.1.0";
+            # One version for everything, from the workspace.
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 

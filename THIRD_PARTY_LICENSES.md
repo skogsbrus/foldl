@@ -692,8 +692,8 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- [foldl 0.1.0](https://github.com/skogsbrus/foldl)
-- [foldl-core 0.1.0](https://github.com/skogsbrus/foldl)
+- [foldl 0.1.1](https://github.com/skogsbrus/foldl)
+- [foldl-core 0.1.1](https://github.com/skogsbrus/foldl)
 
 ```text
 MIT License
