@@ -65,15 +65,19 @@ any `allow`. List only directories whose contents you control.
 
 An agent that can run `foldl allow` can make a folder's code run in your
 own shells later, outside whatever sandbox the agent had. Stop agents from
-allowing folders on their own. Add this to `AGENTS.md` or `CLAUDE.md`:
+allowing folders on their own. Add this to the instructions file your
+agents read: `AGENTS.md` for Codex and most other agents, `CLAUDE.md` for
+Claude Code (a `CLAUDE.md` holding `@AGENTS.md` reads the same file):
 
 ```markdown
 Never run `foldl allow`, `foldl import` or `foldl integrate`. If a folder
 is not allowed, stop and ask the user to review `.foldl/` and allow it.
 ```
 
-Instructions can be ignored or overridden by text the agent reads, so for
-Claude Code also deny the commands in `.claude/settings.json`:
+Text the agent reads can override its instructions, so also block the
+commands in the agent's own permissions where it has them.
+
+Claude Code, in `.claude/settings.json`:
 
 ```json
 {
@@ -82,3 +86,18 @@ Claude Code also deny the commands in `.claude/settings.json`:
   }
 }
 ```
+
+Codex, in `~/.codex/rules/foldl.rules` (or `.codex/rules/` in a trusted
+project). Codex calls rules experimental:
+
+```python
+prefix_rule(
+    pattern = ["foldl", ["allow", "import", "integrate"]],
+    decision = "forbidden",
+    justification = "a person reviews .foldl/ before it is allowed",
+)
+```
+
+Both match on how a command starts, so a command that hides `foldl allow`
+behind a variable assignment, `env` or a script gets past them. They stop
+an agent following bad instructions, not one working around them.

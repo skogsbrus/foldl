@@ -1124,6 +1124,16 @@ corrected here.
   it process start-up. Decision (agreed with the user): under 10 ms,
   unnoticeable at a prompt, is good enough for the MVP; a resident cache
   or shell-side check is post-MVP if it ever matters.
+- **2026-11-04 · Agents other than Claude Code.** Q: Codex has
+  `SessionStart` hooks but, unlike Claude Code's `CLAUDE_ENV_FILE`, no way
+  for a hook to set the env of later commands. Decision: the Codex hook
+  loads the folder into a session owned by the Codex process and tells the
+  model, as developer context, to run commands as
+  `foldl exec --session <id> -- ...`; `exec` joining a session fills in
+  the session's variables the caller lacks. A flag, not
+  `FOLDL_SESSION=...`, so Codex's prefix rules can still match the command.
+  The context lists variable names, never values, since it goes to the
+  model.
 
 ## Prior art
 
