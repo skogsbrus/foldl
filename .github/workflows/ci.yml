@@ -26,6 +26,10 @@ jobs:
         run: echo "SYSTEM=$(nix eval --impure --raw --expr builtins.currentSystem)" >> "$GITHUB_ENV"
       - name: Compile
         run: nix build -L ".#checks.$SYSTEM.build"
+      # The static Linux binary a release attaches: x86_64 on the Linux
+      # runner, aarch64 (cross-built) on the macOS one.
+      - name: Static binary
+        run: scripts/release-archive ci
       - name: Lint
         run: nix build -L ".#checks.$SYSTEM.fmt" ".#checks.$SYSTEM.clippy"
       # Dependencies use only allowed licenses and sources (cargo-deny), and

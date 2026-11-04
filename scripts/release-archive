@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Builds the static Linux binary for this machine's architecture and packs
+# it with its license notices as dist/foldl-<version>-<target>.tar.gz, the
+# file a GitHub Release attaches. Usage: scripts/release-archive <version>
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version=${1:?usage: scripts/release-archive <version>}
+out=$(nix build --no-link --print-out-paths .#foldl-linux-static)
+case "$(file -b "$out/bin/foldl")" in
+  *x86-64*) target=x86_64-unknown-linux-musl ;;
+  *aarch64*) target=aarch64-unknown-linux-musl ;;
+  *) echo "unexpected binary: $(file -b "$out/bin/foldl")" >&2; exit 1 ;;
+esac
+name=foldl-$version-$target
+stage=$(mktemp -d)
+mkdir -p "$stage/$name"
+cp -R "$out/bin" "$out/share" "$stage/$name/"
+chmod -R u+w "$stage/$name"
+mkdir -p dist
+tar -C "$stage" -czf "dist/$name.tar.gz" "$name"
+rm -rf "$stage"
+echo "dist/$name.tar.gz"

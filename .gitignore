@@ -3,3 +3,4 @@
 *.profraw
 lcov.info
 /.foldl/*.local/
+/dist
