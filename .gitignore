@@ -2,3 +2,4 @@
 /result*
 *.profraw
 lcov.info
+/.foldl/*.local/
