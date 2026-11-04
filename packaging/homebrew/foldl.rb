@@ -4,7 +4,7 @@
 class Foldl < Formula
   desc "Run code when a shell enters or leaves a folder"
   homepage "https://github.com/skogsbrus/foldl"
-  url "https://github.com/skogsbrus/foldl/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/skogsbrus/foldl/archive/refs/tags/v0.1.1.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
   head "https://github.com/skogsbrus/foldl.git", branch: "main"

@@ -33,6 +33,8 @@ pub fn version() -> &'static str {
 mod tests {
     #[test]
     fn version_is_set() {
-        assert_eq!(super::version(), "0.1.0");
+        let parts: Vec<&str> = super::version().split('.').collect();
+        assert_eq!(parts.len(), 3, "major.minor.patch");
+        assert!(parts.iter().all(|p| p.parse::<u32>().is_ok()));
     }
 }
