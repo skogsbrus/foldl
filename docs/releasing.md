@@ -17,6 +17,12 @@ Only the repository owner runs it, by hand, on `main`.
    - Point the Homebrew formula's `url` at the new `v<version>` tag.
 2. Merge it once CI passes.
 3. Under **Actions → publish → Run workflow**, choose `main` and run it.
+4. Once the tag exists, set the Homebrew formula's `sha256` to the source
+   tarball's, in a follow-up pull request:
+
+   ```sh
+   curl -sL https://github.com/skogsbrus/foldl/archive/refs/tags/v<version>.tar.gz | shasum -a 256
+   ```
 
 The workflow:
 
