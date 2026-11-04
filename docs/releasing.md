@@ -10,8 +10,11 @@ Only the repository owner runs it, by hand, on `main`.
    - `version` under `[workspace.package]` in `Cargo.toml`
    - the `foldl-core` dependency's `version` in `crates/foldl/Cargo.toml`
 
-   If dependencies changed, run `scripts/licenses` so that
-   `THIRD_PARTY_LICENSES.md` matches `Cargo.lock`; CI checks it.
+   Everything else reads it from there. Then:
+   - `cargo update -w` updates the two crates in `Cargo.lock`.
+   - `scripts/licenses` regenerates `THIRD_PARTY_LICENSES.md`, which lists
+     foldl's own crates and their versions; CI checks it.
+   - Point the Homebrew formula's `url` at the new `v<version>` tag.
 2. Merge it once CI passes.
 3. Under **Actions → publish → Run workflow**, choose `main` and run it.
 
