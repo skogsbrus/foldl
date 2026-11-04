@@ -19,7 +19,7 @@ user-facing positioning, see [Personas and positioning](#personas-and-positionin
 part: services stop when the last activation ends
 ([`flox deactivate`](https://flox.dev/docs/man/flox-deactivate)).
 
-Flox is GPL-2.0, so per CLAUDE.md its source is off limits; everything here
+Flox is GPL-2.0, so per AGENTS.md its source is off limits; everything here
 comes from its docs and public issues.
 
 - `hook.on-deactivate` runs when the last attachment of an activation goes

@@ -1,4 +1,4 @@
-# Only permissive licenses, per CLAUDE.md. Unicode-3.0 is permissive and
+# Only permissive licenses, per AGENTS.md. Unicode-3.0 is permissive and
 # required by unicode-ident (via serde's derive).
 [licenses]
 allow = [
