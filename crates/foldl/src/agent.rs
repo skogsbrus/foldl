@@ -93,27 +93,56 @@ pub fn stop_session(sys: &Sys, id: Option<String>) -> Result<i32, Failure> {
     Ok(code.exit())
 }
 
-/// Hooks `foldl integrate claude` installs.
-const EVENTS: [&str; 2] = ["SessionStart", "CwdChanged"];
+/// An agent tool `foldl integrate` sets up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Agent {
+    Claude,
+}
 
-/// `foldl integrate claude`: adds the hooks to Claude Code's settings.
-pub fn integrate_claude(sys: &Sys, project: bool) -> Result<i32, Failure> {
-    let path: PathBuf = match project {
-        true => sys.cwd.join(".claude/settings.json"),
-        false => PathBuf::from(sys.var("HOME").unwrap_or_default()).join(".claude/settings.json"),
+impl Agent {
+    /// The subcommand, the session prefix and the agent's process name.
+    fn name(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude",
+        }
+    }
+
+    /// Where the hooks go, under the project or the home directory.
+    fn settings(self, base: PathBuf) -> PathBuf {
+        match self {
+            Agent::Claude => base.join(".claude/settings.json"),
+        }
+    }
+
+    fn events(self) -> &'static [&'static str] {
+        match self {
+            Agent::Claude => &["SessionStart", "CwdChanged"],
+        }
+    }
+}
+
+/// `foldl integrate <agent>`: adds foldl's hooks to the agent's settings.
+pub fn integrate(sys: &Sys, agent: Agent, project: bool) -> Result<i32, Failure> {
+    let base = match project {
+        true => sys.cwd.clone(),
+        false => PathBuf::from(sys.var("HOME").unwrap_or_default()),
     };
+    let path = agent.settings(base);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
     let mut settings: Value = serde_json::from_str(&text)
         .map_err(|e| Failure::new(Code::Invalid, format!("{}: {e}", path.display())))?;
     let command = format!(
-        "{} integrate claude --hook",
-        quote(sys.exe.as_os_str().as_encoded_bytes())
+        "{} integrate {} --hook",
+        quote(sys.exe.as_os_str().as_encoded_bytes()),
+        agent.name()
     );
-    let added: Vec<&str> = EVENTS
-        .into_iter()
+    let added: Vec<&str> = agent
+        .events()
+        .iter()
+        .copied()
         .filter(|event| add_hook(&mut settings, event, &command))
         .collect();
-    fsx::write_json(&path, &settings).ctx("writing Claude Code settings")?;
+    fsx::write_json(&path, &settings).ctx(&format!("writing {}", path.display()))?;
     eprintln!(
         "foldl: {}: {}",
         path.display(),
@@ -148,8 +177,8 @@ fn add_hook(settings: &mut Value, event: &str, command: &str) -> bool {
     }
 }
 
-/// The nearest ancestor named `claude`, else the caller's parent.
-fn claude_pid(start: u32) -> u32 {
+/// The nearest ancestor named `name`, else `start`.
+fn ancestor_named(start: u32, name: &str) -> u32 {
     let ancestry = std::iter::successors(Some(start), |pid| {
         let out = std::process::Command::new("ps")
             .args(["-o", "ppid=", "-p", &pid.to_string()])
@@ -168,9 +197,49 @@ fn claude_pid(start: u32) -> u32 {
         let comm = out
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .unwrap_or_default();
-        comm.rsplit('/').next() == Some("claude")
+        comm.rsplit('/').next() == Some(name)
     };
     ancestry.take(8).find(named).unwrap_or(start)
+}
+
+/// What a hook run did: the agent session's id, whether it was new, the
+/// env change and how loading went.
+struct HookRun {
+    id: String,
+    first: bool,
+    diff: EnvDiff,
+    code: Code,
+}
+
+/// The common part of every agent's hook: reads the event from stdin and
+/// loads its `cwd` into the session `<agent>-<session_id>`, owned by the
+/// nearest ancestor process named after the agent, so leases are held for
+/// as long as the agent runs.
+fn hook_run(sys: &Sys, agent: Agent) -> Result<HookRun, Failure> {
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .ctx("reading the hook input")?;
+    let event: Value = serde_json::from_str(&input)
+        .map_err(|e| Failure::new(Code::Usage, format!("hook input: {e}")))?;
+    let agent_session = event["session_id"]
+        .as_str()
+        .filter(|s| session::valid_id(s));
+    let id = format!("{}-{}", agent.name(), agent_session.unwrap_or("unknown"));
+    let cwd = event["cwd"].as_str().map_or(sys.cwd.clone(), PathBuf::from);
+    let paths = sys.paths();
+    let existing = session::load(&paths, &id);
+    let first = existing.is_none();
+    let owner = || ancestor_named(parent_pid(), agent.name());
+    let session = existing.unwrap_or_else(|| Session::new(id.clone(), owner(), None));
+    let infos = crate::oneshot::infos(sys, &cwd, &settings::load(sys, None));
+    let (diff, code) = transition(sys, session, &infos)?;
+    Ok(HookRun {
+        id,
+        first,
+        diff,
+        code,
+    })
 }
 
 /// `foldl integrate claude --hook`: run by Claude Code at `SessionStart`
@@ -178,37 +247,20 @@ fn claude_pid(start: u32) -> u32 {
 /// session's agent session and appends the env change to
 /// `CLAUDE_ENV_FILE`, which every Bash command sources in order.
 pub fn claude_hook(sys: &Sys) -> Result<i32, Failure> {
-    let mut input = String::new();
-    std::io::stdin()
-        .read_to_string(&mut input)
-        .ctx("reading the hook input")?;
-    let event: Value = serde_json::from_str(&input)
-        .map_err(|e| Failure::new(Code::Usage, format!("hook input: {e}")))?;
     let env_file = sys
         .var("CLAUDE_ENV_FILE")
         .ok_or(Failure::new(Code::Usage, "CLAUDE_ENV_FILE is not set"))?;
-    let claude = event["session_id"]
-        .as_str()
-        .filter(|s| session::valid_id(s));
-    let id = format!("claude-{}", claude.unwrap_or("unknown"));
-    let cwd = event["cwd"].as_str().map_or(sys.cwd.clone(), PathBuf::from);
-    let paths = sys.paths();
-    let existing = session::load(&paths, &id);
-    let first = existing.is_none();
-    let session =
-        existing.unwrap_or_else(|| Session::new(id.clone(), claude_pid(parent_pid()), None));
-    let infos = crate::oneshot::infos(sys, &cwd, &settings::load(sys, None));
-    let (diff, code) = transition(sys, session, &infos)?;
-    let export = match first {
-        true => format!("export FOLDL_SESSION={}\n", quote(id.as_bytes())),
+    let run = hook_run(sys, Agent::Claude)?;
+    let export = match run.first {
+        true => format!("export FOLDL_SESSION={}\n", quote(run.id.as_bytes())),
         false => String::new(),
     };
-    let text = export + &render(Shell::Bash, &diff);
+    let text = export + &render(Shell::Bash, &run.diff);
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&env_file)
         .ctx("opening CLAUDE_ENV_FILE")?;
     std::io::Write::write_all(&mut file, text.as_bytes()).ctx("writing CLAUDE_ENV_FILE")?;
-    Ok(code.exit())
+    Ok(run.code.exit())
 }

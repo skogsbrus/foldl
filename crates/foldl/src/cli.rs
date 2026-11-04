@@ -374,7 +374,7 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
                     project,
                     hook: false,
                 },
-        } => crate::agent::integrate_claude(sys, project),
+        } => crate::agent::integrate(sys, crate::agent::Agent::Claude, project),
         Command::Hold {
             what: Hold::Lease {
                 parent, sidecar, ..
