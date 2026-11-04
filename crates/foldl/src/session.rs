@@ -97,6 +97,18 @@ pub fn revert(env: Env, inherited: &EnvDiff) -> Env {
     undo.apply(env)
 }
 
+/// Applies a session's changes where the env still has the value from
+/// before them: a caller that joins a session without its env, such as a
+/// Codex command, gets it, and one that already has it, such as a Claude
+/// Code command, is left as it is.
+pub fn replay(env: Env, session: &EnvDiff) -> Env {
+    let missing = session
+        .0
+        .iter()
+        .filter(|(name, c)| env.get(*name) == c.before.as_ref());
+    EnvDiff(missing.map(|(n, c)| (n.clone(), c.clone())).collect()).apply(env)
+}
+
 /// Removes sessions whose parent and holder are both gone.
 pub fn sweep(paths: &Paths) {
     let dirs = std::fs::read_dir(paths.sessions())
@@ -204,6 +216,14 @@ mod tests {
             revert(now, &inherited),
             env(&[("A", "0"), ("B", "changed")])
         );
+        let without = env(&[("A", "0"), ("B", "mine")]);
+        assert_eq!(
+            replay(without, &inherited),
+            env(&[("A", "1"), ("B", "mine"), ("C", "1")]),
+            "fills in what's missing, keeps what the caller changed"
+        );
+        let with = env(&[("A", "1"), ("B", "1"), ("C", "1")]);
+        assert_eq!(replay(with.clone(), &inherited), with);
     }
 
     #[test]

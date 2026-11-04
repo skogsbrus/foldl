@@ -367,10 +367,11 @@ Logs are mode 0600 and are not redacted.
 
 ### `foldl exec`
 
-`foldl exec [DIR] [--json] -- <CMD>...` loads the folder, runs the command in
-it, and unloads. It exits with the command's own status. If your session
-already has the folder loaded, it joins that session. Use it for one-off
-commands and from agents. See [docs/agents.md](docs/agents.md).
+`foldl exec [DIR] [--json] [--session <ID>] -- <CMD>...` loads the folder,
+runs the command in it, and unloads. It exits with the command's own status.
+If your session (`--session`, else `FOLDL_SESSION`) already has the folder
+loaded, it joins that session and gives the command its environment. Use it
+for one-off commands and from agents. See [docs/agents.md](docs/agents.md).
 
 ### `foldl export`
 

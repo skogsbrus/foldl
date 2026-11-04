@@ -54,6 +54,9 @@ fn an_agent_session_holds_leases_while_its_process_lives() {
         .output()
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&joined.stdout), "1\n");
+    let flag = ["exec", "--session", "agent-1", "--", "sh", "-c", "echo $A"];
+    let without_env = f.run(&flag);
+    assert_eq!(without_env.stdout, "1\n", "joined and given the env");
     assert_eq!(f.calls(), "up\n", "exec joined; the lease stays up");
     agent.kill().unwrap();
     agent.wait().unwrap();

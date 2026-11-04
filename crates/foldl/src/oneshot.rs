@@ -161,9 +161,13 @@ fn full_env(sys: &Sys, diff: &EnvDiff) -> Vec<(OsString, OsString)> {
     vars.into_iter().collect()
 }
 
+/// `foldl exec`. `session` (else `FOLDL_SESSION`) names a session to join
+/// when it already has the folder loaded; the command then gets that
+/// session's env without loading anything.
 pub fn exec(
     sys: &Sys,
     dir: Option<PathBuf>,
+    session: Option<String>,
     cmd: Vec<OsString>,
     verbosity: Option<Verbosity>,
 ) -> Result<i32, Failure> {
@@ -174,17 +178,24 @@ pub fn exec(
         p.downs == 0 && p.ups.is_empty() && !s.loaded.is_empty()
     };
     let paths = sys.paths();
-    let existing = sys
-        .var("FOLDL_SESSION")
-        .and_then(|id| session::load(&paths, &id));
-    let joins = existing.as_ref().is_some_and(joined);
-    let loaded = match joins {
-        true => None,
-        false => Some(load(sys, &dir, verbosity, |_| false)?),
+    let existing = session
+        .or_else(|| sys.var("FOLDL_SESSION"))
+        .and_then(|id| session::load(&paths, &id))
+        .filter(joined);
+    let loaded = match existing {
+        Some(_) => None,
+        None => Some(load(sys, &dir, verbosity, |_| false)?),
     };
-    let diff = loaded.as_ref().map_or_else(EnvDiff::default, |l| {
-        EnvDiff::between(&tracked(sys.env()), &l.finish.env)
-    });
+    let actual = tracked(sys.env());
+    let joined_diff = existing
+        .as_ref()
+        .map(Session::cumulative)
+        .unwrap_or_default();
+    let after = match &loaded {
+        Some(l) => l.finish.env.clone(),
+        None => session::replay(actual.clone(), &joined_diff),
+    };
+    let diff = EnvDiff::between(&actual, &after);
     let ignore_ctrl_c = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, ignore_ctrl_c).ctx("signals")?;
     let status = std::process::Command::new(&cmd[0])

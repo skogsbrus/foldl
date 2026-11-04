@@ -121,6 +121,10 @@ pub enum Command {
         /// Print errors as JSON.
         #[arg(long)]
         json: bool,
+        /// Join this session if it has the folder loaded (default:
+        /// $FOLDL_SESSION).
+        #[arg(long)]
+        session: Option<String>,
         #[arg(last = true, required = true)]
         cmd: Vec<OsString>,
     },
@@ -324,7 +328,9 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Redo { name } => crate::manual::mark(sys, &name, crate::manual::Action::Redo),
         Command::Status { all, json, events } => crate::status::status(sys, all, json, events),
         Command::Logs { name } => crate::status::logs(sys, &name),
-        Command::Exec { dir, cmd, .. } => crate::oneshot::exec(sys, dir, cmd, verbosity),
+        Command::Exec {
+            dir, session, cmd, ..
+        } => crate::oneshot::exec(sys, dir, session, cmd, verbosity),
         Command::Export { format, dir, .. } => crate::oneshot::export(sys, format, dir, verbosity),
         Command::Import {
             from:
