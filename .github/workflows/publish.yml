@@ -1,0 +1,76 @@
+# Publishes foldl-core and foldl to crates.io, then tags v<version>.
+#
+# Manual only: Actions -> publish -> Run workflow, on main. Only the
+# repository owner may run it. The job checks the branch and who started
+# it before the step that can read CARGO_REGISTRY_TOKEN, which lives in
+# the "Cargo publish" environment. That environment should also allow
+# only main and require the owner's approval, since anyone who can push a
+# branch could edit this file on it. See docs/releasing.md.
+name: publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One publish at a time, and never cancel one halfway.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'skogsbrus' &&
+      github.triggering_actor == 'skogsbrus'
+    runs-on: ubuntu-latest
+    environment: Cargo publish
+    permissions:
+      # Push the v<version> tag.
+      contents: write
+    steps:
+      # Pinned to commits, since this job can read the token.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+
+      # Refuse a version that is already out, before building anything.
+      - name: Version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          core=$(sed -n 's/^foldl-core = .*version = "\([^"]*\)".*/\1/p' crates/foldl/Cargo.toml)
+          if [ "$core" != "$version" ]; then
+            echo "::error::foldl depends on foldl-core $core, but the workspace is $version; bump both"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version is already tagged; bump the version first"
+            exit 1
+          fi
+          for crate in foldl-core foldl; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A 'foldl-publish (https://github.com/skogsbrus/foldl)' \
+              "https://crates.io/api/v1/crates/$crate/$version")
+            if [ "$code" = 200 ]; then
+              echo "::error::$crate $version is already on crates.io; bump the version first"
+              exit 1
+            fi
+          done
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # main passed CI on its pull request; these catch what publishing
+      # itself needs: it builds, its licenses are allowed and listed.
+      - name: Check
+        run: nix build -L .#checks.x86_64-linux.build .#checks.x86_64-linux.deny .#checks.x86_64-linux.licenses
+
+      # foldl-core first, then foldl against it; cargo waits in between.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: nix develop -c cargo publish --workspace --locked
+
+      - name: Tag
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"

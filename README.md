@@ -27,11 +27,17 @@ rollback, and switching from direnv.
 
 ## Install
 
-foldl is not published yet. Build it from this repository.
+From [crates.io](https://crates.io/crates/foldl):
 
 ```sh
-nix build                        # result/bin/foldl
-cargo install --path crates/foldl
+cargo install foldl
+```
+
+With Nix, from this repository's flake:
+
+```sh
+nix profile install github:skogsbrus/foldl
+nix run github:skogsbrus/foldl -- --help   # without installing
 ```
 
 The flake also provides an overlay, a home-manager module and a NixOS module.
