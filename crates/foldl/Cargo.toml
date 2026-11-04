@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme = "../../README.md"
+keywords = ["direnv", "shell", "environment", "worktree", "nix"]
+categories = ["command-line-utilities", "development-tools"]
 
 [lints]
 workspace = true
