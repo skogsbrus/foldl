@@ -393,9 +393,18 @@ For agents that have no long-lived shell.
 
 ### `foldl integrate`
 
-`foldl integrate claude [--project]` installs Claude Code `SessionStart` and
-`CwdChanged` hooks, in `~/.claude/settings.json`, or with `--project` in the
-project's `.claude/settings.json`. See [docs/agents.md](docs/agents.md).
+`foldl integrate <claude|codex> [--project]` installs hooks so an agent's
+sessions load the folder it works in.
+
+- `claude`: `SessionStart` and `CwdChanged` hooks in
+  `~/.claude/settings.json` (`--project`: `.claude/settings.json`). Every
+  Bash command gets the folder's environment.
+- `codex`: a `SessionStart` hook in `~/.codex/hooks.json` (`--project`:
+  `.codex/hooks.json`). Codex hooks can't pass on an environment, so the
+  hook tells Codex to run commands as `foldl exec --session <id> -- ...`.
+
+Other agents can use `foldl exec` and `foldl session` directly. See
+[docs/agents.md](docs/agents.md).
 
 ### `foldl import`
 

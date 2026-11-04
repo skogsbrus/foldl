@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Johan Fosse
 
 //! Agent support: named sessions owned by a long-lived agent process, and
-//! the Claude Code integration.
+//! the Claude Code and Codex integrations.
 //!
-//! An agent session has no shell; its env reaches the agent's commands as
-//! text (`foldl export`, or `CLAUDE_ENV_FILE`). Its holders follow the
-//! agent's PID, so leases last as long as the agent and are released when
-//! it exits.
+//! An agent session has no shell. Its env reaches the agent's commands as
+//! text (`foldl export`, or Claude Code's `CLAUDE_ENV_FILE`) or through
+//! `foldl exec --session` (Codex). Its holders follow the agent's PID, so
+//! leases last as long as the agent and are released when it exits.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -97,6 +97,7 @@ pub fn stop_session(sys: &Sys, id: Option<String>) -> Result<i32, Failure> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Claude,
+    Codex,
 }
 
 impl Agent {
@@ -104,19 +105,25 @@ impl Agent {
     fn name(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
+            Agent::Codex => "codex",
         }
     }
 
-    /// Where the hooks go, under the project or the home directory.
+    /// Where the hooks go, under the project or the home directory. Both
+    /// tools read the same `{"hooks": {event: [...]}}` shape.
     fn settings(self, base: PathBuf) -> PathBuf {
         match self {
             Agent::Claude => base.join(".claude/settings.json"),
+            Agent::Codex => base.join(".codex/hooks.json"),
         }
     }
 
+    /// Codex has no event for a changed directory; its sessions stay in
+    /// one.
     fn events(self) -> &'static [&'static str] {
         match self {
             Agent::Claude => &["SessionStart", "CwdChanged"],
+            Agent::Codex => &["SessionStart"],
         }
     }
 }
@@ -203,12 +210,13 @@ fn ancestor_named(start: u32, name: &str) -> u32 {
 }
 
 /// What a hook run did: the agent session's id, whether it was new, the
-/// env change and how loading went.
+/// env change, how loading went and how many folders there were.
 struct HookRun {
     id: String,
     first: bool,
     diff: EnvDiff,
     code: Code,
+    folders: usize,
 }
 
 /// The common part of every agent's hook: reads the event from stdin and
@@ -239,6 +247,7 @@ fn hook_run(sys: &Sys, agent: Agent) -> Result<HookRun, Failure> {
         first,
         diff,
         code,
+        folders: infos.len(),
     })
 }
 
@@ -263,4 +272,41 @@ pub fn claude_hook(sys: &Sys) -> Result<i32, Failure> {
         .ctx("opening CLAUDE_ENV_FILE")?;
     std::io::Write::write_all(&mut file, text.as_bytes()).ctx("writing CLAUDE_ENV_FILE")?;
     Ok(run.code.exit())
+}
+
+/// `foldl integrate codex --hook`: run by Codex at `SessionStart`. Codex
+/// gives hooks no way to set the env of later commands, so this loads the
+/// folder into the Codex session's agent session (starting shared
+/// migrations and holding their leases) and tells the model, as developer
+/// context, to run commands through `foldl exec --session`. Only variable
+/// names are shown, never values.
+pub fn codex_hook(sys: &Sys) -> Result<i32, Failure> {
+    let run = hook_run(sys, Agent::Codex)?;
+    if let Some(text) = codex_context(&run) {
+        let output = json!({"hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": text,
+        }});
+        println!("{output}");
+    }
+    Ok(0)
+}
+
+/// What the Codex model is told; nothing outside a foldl folder.
+fn codex_context(run: &HookRun) -> Option<String> {
+    let id = &run.id;
+    let names: Vec<&str> = run.diff.0.keys().map(String::as_str).collect();
+    let loaded = format!(
+        "foldl manages this folder's environment ({}). Codex shell commands don't get it on their own: run each one as `foldl exec --session {id} -- <command>`, for example `foldl exec --session {id} -- make test`.",
+        names.join(", ")
+    );
+    let failed = format!(
+        "foldl couldn't load this folder ({}), so commands run without its environment. Tell the user. Don't run `foldl allow` or edit `.foldl/` to fix it: a person has to review `.foldl/` first.",
+        run.code.name()
+    );
+    match (run.folders, run.code) {
+        (0, _) => None,
+        (_, Code::Ok) => Some(loaded),
+        _ => Some(failed),
+    }
 }

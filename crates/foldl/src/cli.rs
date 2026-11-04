@@ -218,6 +218,15 @@ pub enum Integration {
         #[arg(long)]
         hook: bool,
     },
+    /// Install a Codex hook (SessionStart).
+    Codex {
+        /// In this project's .codex/hooks.json instead of ~/.codex.
+        #[arg(long)]
+        project: bool,
+        /// Internal: run as the hook.
+        #[arg(long)]
+        hook: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -365,16 +374,19 @@ fn dispatch(cli: Cli, sys: &Sys) -> Result<i32, Failure> {
         Command::Session {
             action: SessionAction::Stop { id },
         } => crate::agent::stop_session(sys, id),
-        Command::Integrate {
-            tool: Integration::Claude { hook: true, .. },
-        } => crate::agent::claude_hook(sys),
-        Command::Integrate {
-            tool:
-                Integration::Claude {
-                    project,
-                    hook: false,
-                },
-        } => crate::agent::integrate(sys, crate::agent::Agent::Claude, project),
+        Command::Integrate { tool } => {
+            use crate::agent::Agent;
+            match tool {
+                Integration::Claude { hook: true, .. } => crate::agent::claude_hook(sys),
+                Integration::Codex { hook: true, .. } => crate::agent::codex_hook(sys),
+                Integration::Claude { project, .. } => {
+                    crate::agent::integrate(sys, Agent::Claude, project)
+                }
+                Integration::Codex { project, .. } => {
+                    crate::agent::integrate(sys, Agent::Codex, project)
+                }
+            }
+        }
         Command::Hold {
             what: Hold::Lease {
                 parent, sidecar, ..

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Johan Fosse
 
-//! Agent sessions and the Claude Code integration.
+//! Agent sessions and the Claude Code and Codex integrations.
 
 mod common;
 
@@ -257,4 +257,105 @@ fn the_hook_needs_its_inputs() {
         "no claude ancestor, no cwd: falls back"
     );
     assert_eq!(bash_call(&f.home.join("e"), "echo $A"), "1\n");
+}
+
+/// A process named `codex` that runs the SessionStart hook for `cwd`, the
+/// way Codex does, then stays alive until killed. Returns it and the
+/// hook's stdout.
+fn fake_codex(f: &Fixture, cwd: &std::path::Path) -> (std::process::Child, std::path::PathBuf) {
+    let bin = f.home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let codex = bin.join("codex");
+    if !codex.exists() {
+        std::os::unix::fs::symlink(common::which("sh"), &codex).unwrap();
+    }
+    let input = f.home.join("start.json");
+    let event = r#"{"session_id": "t1", "cwd": "CWD", "hook_event_name": "SessionStart"}"#;
+    std::fs::write(&input, event.replace("CWD", &cwd.display().to_string())).unwrap();
+    let out = f.home.join("context.json");
+    let script = format!(
+        "'{}' integrate codex --hook < '{}' > '{}'; touch \"$HOME/started\"; exec sleep 60",
+        common::foldl().display(),
+        input.display(),
+        out.display()
+    );
+    let mut cmd = Command::new(codex);
+    cmd.arg("-c").arg(script);
+    let child = f.prepare(cmd).spawn().unwrap();
+    wait_until(|| f.home.join("started").exists());
+    std::fs::remove_file(f.home.join("started")).unwrap();
+    (child, out)
+}
+
+fn context(out: &std::path::Path) -> String {
+    let text = std::fs::read_to_string(out).unwrap();
+    let output: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let specific = &output["hookSpecificOutput"];
+    assert_eq!(specific["hookEventName"], "SessionStart");
+    specific["additionalContext"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn integrate_installs_the_codex_hook() {
+    let f = Fixture::new();
+    let hooks = f.home.join(".codex/hooks.json");
+    assert_eq!(
+        f.run(&["integrate", "codex"]).stderr,
+        format!("foldl: {}: added SessionStart hooks\n", hooks.display())
+    );
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
+    let command = written["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str();
+    assert!(command.unwrap().ends_with("integrate codex --hook"));
+    assert!(written["hooks"]["CwdChanged"].is_null());
+    assert_eq!(f.run(&["integrate", "codex", "--project"]).code, 0);
+    assert!(f.project.join(".codex/hooks.json").exists());
+}
+
+#[test]
+fn codex_is_told_to_use_its_session_which_holds_leases_until_codex_exits() {
+    let f = Fixture::new();
+    f.folder(".", FILES);
+    let (mut codex, out) = fake_codex(&f, &f.project);
+    let told = context(&out);
+    assert!(
+        told.contains("run each one as `foldl exec --session codex-t1 -- <command>`"),
+        "{told}"
+    );
+    assert!(told.contains("environment (A)"), "names only: {told}");
+    assert_eq!(f.calls(), "up\n");
+    let cmd = ["exec", "--session", "codex-t1", "--", "sh", "-c", "echo $A"];
+    assert_eq!(f.run(&cmd).stdout, "1\n");
+    assert_eq!(f.calls(), "up\n", "joined: the shared up ran once");
+    codex.kill().unwrap();
+    codex.wait().unwrap();
+    wait_until(|| f.calls() == "up\ndown\n");
+    f.settle();
+}
+
+#[test]
+fn codex_hears_why_a_folder_did_not_load() {
+    let f = Fixture::new();
+    f.write(
+        ".foldl/1-env/manifest.toml",
+        "version = 1\n[env]\nA = \"1\"",
+    );
+    let (mut untrusted, out) = fake_codex(&f, &f.project);
+    let told = context(&out);
+    assert!(
+        told.contains("couldn't load this folder (untrusted)"),
+        "{told}"
+    );
+    assert!(told.contains("Don't run `foldl allow`"), "{told}");
+    untrusted.kill().unwrap();
+    untrusted.wait().unwrap();
+    let (mut elsewhere, out) = fake_codex(&f, &f.home);
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "",
+        "no folder, no context"
+    );
+    elsewhere.kill().unwrap();
+    elsewhere.wait().unwrap();
+    f.settle();
 }
