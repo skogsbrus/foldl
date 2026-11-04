@@ -47,7 +47,9 @@ What it does on `up`:
 
 Only exported variables apply. `PATH` and `XDG_DATA_DIRS` are prepended to
 your session's values. Variables that describe the build sandbox (`HOME`,
-`TMPDIR`, `NIX_BUILD_TOP`, `SHELL`, ...) are skipped.
+`TMPDIR`, `NIX_BUILD_TOP`, `SHELL`, ...) are skipped. As in `nix develop`,
+`NIX_BUILD_TOP` is then set to your `TMPDIR` (else `/tmp`), because the
+compiler wrappers need it.
 
 When `flake.nix`, `flake.lock` or a watched file changes, the migration
 reloads at the next prompt.

@@ -119,7 +119,7 @@ pub fn apply(json: &[u8], env: &Env) -> Result<Env, String> {
             .to_string();
         (!SKIPPED.contains(&name.as_str())).then_some((name, value))
     });
-    Ok(exported.fold(env.clone(), |mut env, (name, value)| {
+    let mut applied = exported.fold(env.clone(), |mut env, (name, value)| {
         let current = env
             .get(&name)
             .map(Value::lossy)
@@ -131,7 +131,16 @@ pub fn apply(json: &[u8], env: &Env) -> Result<Env, String> {
             .join(":");
         env.insert(name, Value::from(joined.as_str()));
         env
-    }))
+    });
+    // The sandbox's build directory is skipped above, but stdenv's cc
+    // wrapper reads NIX_BUILD_TOP under `set -u`, so linking fails without
+    // it. Like `nix develop`, point it at the temporary directory.
+    let top = applied
+        .get("TMPDIR")
+        .cloned()
+        .unwrap_or(Value::from("/tmp"));
+    applied.entry("NIX_BUILD_TOP".to_string()).or_insert(top);
+    Ok(applied)
 }
 
 #[cfg(test)]
@@ -145,22 +154,31 @@ mod tests {
             "PATH": {"type": "exported", "value": "/nix/bin"},
             "HOME": {"type": "exported", "value": "/homeless-shelter"},
             "NIX_STORE": {"type": "exported", "value": "/nix/store"},
+            "NIX_BUILD_TOP": {"type": "exported", "value": "/build"},
+            "TMPDIR": {"type": "exported", "value": "/build"},
             "local": {"type": "var", "value": "x"},
             "arr": {"type": "array", "value": ["a"]}
         }}"#;
         let env: Env = [
             ("PATH".to_string(), Value::from("/usr/bin")),
             ("HOME".to_string(), Value::from("/h")),
+            ("TMPDIR".to_string(), Value::from("/var/t")),
         ]
         .into();
         let got = apply(json, &env).unwrap();
         assert_eq!(got["FOO"], Value::from("bar"));
         assert_eq!(got["PATH"], Value::from("/nix/bin:/usr/bin"));
         assert_eq!(got["HOME"], Value::from("/h"));
-        // The compiler wrappers in a dev shell fail without it.
+        // The compiler wrappers in a dev shell fail without these; the
+        // sandbox's build directory is replaced by the session's TMPDIR.
         assert_eq!(got["NIX_STORE"], Value::from("/nix/store"));
+        assert_eq!(got["NIX_BUILD_TOP"], Value::from("/var/t"));
+        assert_eq!(got["TMPDIR"], Value::from("/var/t"));
         assert!(!got.contains_key("local") && !got.contains_key("arr"));
-        assert_eq!(apply(br#"{}"#, &Env::new()).unwrap(), Env::new());
+        let top = |e: Env| apply(br#"{}"#, &e).unwrap()["NIX_BUILD_TOP"].clone();
+        assert_eq!(top(Env::new()), Value::from("/tmp"), "no TMPDIR");
+        let mine: Env = [("NIX_BUILD_TOP".to_string(), Value::from("/mine"))].into();
+        assert_eq!(top(mine), Value::from("/mine"), "an existing one is kept");
         assert!(
             apply(b"nope", &Env::new())
                 .unwrap_err()
